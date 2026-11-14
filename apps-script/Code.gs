@@ -202,14 +202,47 @@ function doPost(e) {
     if (!data.items || !data.items.length) missing.push('상품');
     if (missing.length) return respond({ ok: false, error: '필수값 누락: ' + missing.join(', ') });
 
+    // 전화번호는 한국 휴대폰 형식(010/011/016/017/018/019, 10~11자리)으로 검증합니다.
+    if (!isValidMobileDigits_(normalizeMobileDigits_(data.ordererPhone))) {
+      return respond({ ok: false, error: '주문자 연락처를 정확히 입력해 주세요.' });
+    }
+    if (!isValidMobileDigits_(normalizeMobileDigits_(data.receiverPhone))) {
+      return respond({ ok: false, error: '받는 분 연락처를 정확히 입력해 주세요.' });
+    }
+
+    // 주문 내역 검증 — 상품 id가 있고 수량이 양의 정수인지, totalQty가
+    // 항목 수량 합계와 일치하는지 확인합니다. totalAmount는 쉼표를 제거해
+    // 숫자로 파싱하고 숫자가 아니면 주문을 거부합니다.
+    var itemsQtySum = 0;
+    for (var vi = 0; vi < data.items.length; vi++) {
+      var vit = data.items[vi] || {};
+      if (!String(vit.id || '').trim()) return respond({ ok: false, error: '주문 상품을 확인해 주세요.' });
+      var vqty = Number(vit.qty);
+      if (!isFinite(vqty) || vqty !== Math.floor(vqty) || vqty < 1) {
+        return respond({ ok: false, error: '주문 수량을 확인해 주세요.' });
+      }
+      itemsQtySum += vqty;
+    }
+    if (Number(data.totalQty) !== itemsQtySum) {
+      return respond({ ok: false, error: '주문 수량 합계가 맞지 않습니다.' });
+    }
+    var amountText = String(data.totalAmount == null ? '' : data.totalAmount).replace(/[^0-9]/g, '');
+    if (amountText === '' || !isFinite(Number(amountText))) {
+      return respond({ ok: false, error: '주문 금액을 확인해 주세요.' });
+    }
+
     // 상품별 배송지가 있으면 검증합니다 (이름·연락처·주소 필수, 연락처 형식, 주문 항목 매칭).
     var splitError = validateDeliveryOverrides_(data);
     if (splitError) return respond({ ok: false, error: splitError });
 
-    // 상품 가격을 서버에서 다시 계산합니다 (상품설정 탭이 있을 때만).
-    // 탭에 없는 상품이 섞여 있으면 클라이언트가 보낸 금액을 그대로 씁니다.
+    // 상품 가격을 서버에서 다시 계산합니다 (카탈로그 기준, 노출 중단 상품 제외).
+    // 다시 계산에 실패하면(없는 상품·노출 중단 상품·수량 오류) 주문을 거부합니다 —
+    // 클라이언트가 보낸 금액을 그대로 믿지 않습니다.
     // 다시 계산했으면 내역도 카탈로그 이름·가격으로 바꿔 응답에 담습니다.
     var repricedItems = repriceOrder_(data);
+    if (!repricedItems) {
+      return respond({ ok: false, error: '상품 정보를 확인해 주세요. (노출 중단된 상품이거나 수량이 올바르지 않습니다.)' });
+    }
 
     var sheet = getSheet();
     ensureHeader(sheet);
@@ -350,6 +383,64 @@ function trackGet(phone) {
   }
 }
 
+/** 상품설정 탭을 이름→{id, name, price}으로 읽습니다 (탭을 만들지 않음).
+ *  탭이 없거나 비어 있으면 기본 4종(FALLBACK_PRODUCTS)으로 봅니다. */
+function readCatalogByName_() {
+  var byName = {};
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(PRODUCTS_SHEET_NAME);
+  var rows = [];
+  if (sheet) {
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var values = sheet.getRange(2, 1, lastRow - 1, PRODUCTS_HEADERS.length).getDisplayValues();
+      for (var i = 0; i < values.length; i++) {
+        var r = values[i];
+        var name = String(r[1] || '').trim();
+        if (!name) continue;
+        rows.push({
+          id: String(r[0] || '').trim(),
+          name: name,
+          price: Number(String(r[2] || '0').replace(/[^0-9]/g, '') || 0)
+        });
+      }
+    }
+  }
+  if (!rows.length) {
+    for (var j = 0; j < FALLBACK_PRODUCTS.length; j++) {
+      rows.push({ id: FALLBACK_PRODUCTS[j].id, name: FALLBACK_PRODUCTS[j].name, price: FALLBACK_PRODUCTS[j].price });
+    }
+  }
+  for (var k = 0; k < rows.length; k++) byName[rows[k].name] = rows[k];
+  return byName;
+}
+
+/** 주문 요약 텍스트("이름 N박스, 이름 N박스")를 상품별 내역으로 풉니다.
+ *  카탈로그와 이름이 맞으면 id·단가·금액도 채웁니다 (상품별 통계용).
+ *  풀이 안 되는 부분은 이름 통째로 수량 1건으로 둡니다. */
+function parseOrderItems_(summary, catalogByName) {
+  var items = [];
+  var text = String(summary || '').trim();
+  if (!text) return items;
+  var parts = text.split(',');
+  for (var i = 0; i < parts.length; i++) {
+    var seg = String(parts[i] || '').trim();
+    if (!seg) continue;
+    var m = seg.match(/^(.*\S)\s+(\d+)박스\s*$/);
+    var name = m ? m[1] : seg;
+    var qty = m ? Number(m[2]) : 1;
+    var cat = catalogByName ? catalogByName[name] : null;
+    items.push({
+      id: cat ? cat.id : '',
+      name: name,
+      qty: qty,
+      price: cat ? cat.price : 0,
+      amount: cat ? cat.price * qty : 0
+    });
+  }
+  return items;
+}
+
 function adminList(key) {
   try {
     checkAdmin(key);
@@ -357,6 +448,7 @@ function adminList(key) {
     ensureHeader(sheet);
     var lastRow = sheet.getLastRow();
     var orders = [];
+    var catalogByName = readCatalogByName_();
     if (lastRow >= 2) {
       var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getDisplayValues();
       for (var i = 0; i < values.length; i++) {
@@ -366,6 +458,7 @@ function adminList(key) {
           row: i + 2,
           datetime: r[0], product: r[1], qty: Number(r[2] || 0),
           amount: Number(String(r[3] || '0').replace(/[^0-9]/g, '') || 0),
+          items: parseOrderItems_(r[1], catalogByName),
           depositor: r[4], orderer: r[5], ordererPhone: r[6],
           receiver: r[7], receiverPhone: r[8], receiverAddress: r[9],
           zipcode: r[13] || '',
@@ -409,14 +502,48 @@ function adminUpdateBatch(data) {
   }
 }
 
+/** 삭제된 주문 복구용 기록 탭 — 행 전체 내용을 삭제 전에 남깁니다.
+ *  헤더는 [삭제일시, 주문행] + 주문 시트 HEADERS 15열과 같습니다. */
+var DELETE_LOG_SHEET_NAME = '삭제기록';
+var DELETE_LOG_HEADERS = ['삭제일시', '주문행'].concat(HEADERS);
+
+/** '삭제기록' 탭을 가져옵니다. 없으면 헤더와 함께 만듭니다. */
+function getDeleteLogSheet_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(DELETE_LOG_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(DELETE_LOG_SHEET_NAME);
+    sheet.getRange(1, 1, 1, DELETE_LOG_HEADERS.length).setValues([DELETE_LOG_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** 관리자 주문 삭제 — 행을 지우기 전에 전체 내용을 '삭제기록' 탭에 남겨
+ *  복구할 수 있게 합니다. (하드 삭제는 유지하되 기록을 남김.)
+ *  락 안에서 행 범위 확인·기록·삭제를 한 번에 해서, 다른 탭·사람이
+ *  동시에 지울 때 행 번호가 밀려 엉뚱한 주문을 지우는 일을 막습니다. */
 function adminDelete(data) {
   try {
     checkAdmin(data && data.key);
     var row = Number(data && data.row || 0);
     if (!row || row < 2) return respond({ ok: false, error: '잘못된 행 번호입니다.' });
     var sheet = getSheet();
-    if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
-    sheet.deleteRow(row);
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      // 행 범위 검사는 락 안에서 다시 합니다 (검사-삭제 사이에 다른 삭제가
+      // 행 번호를 밀 수 있어서, 락 밖 검사는 믿을 수 없습니다).
+      if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+      // 삭제 전에 행 전체 내용을 '삭제기록' 탭에 남깁니다 (복구용).
+      var values = sheet.getRange(row, 1, 1, HEADERS.length).getDisplayValues()[0];
+      var logSheet = getDeleteLogSheet_();
+      var stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+      logSheet.appendRow([stamp, row].concat(values));
+      sheet.deleteRow(row);
+    } finally {
+      lock.releaseLock();
+    }
     return respond({ ok: true, row: row });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
@@ -1103,7 +1230,14 @@ function testLogenApi(data) {
  *  (기본 배송지면 대표 송장 M열, 분리 배송지면 O열 JSON)에 송장번호를
  *  넣어줍니다. 이미 송장번호가 있으면 새로 발급하지 않고 오류를 돌려줍니다
  *  (중복 발송 방지). API 실패가 주문 자체를 망가뜨리지 않게 try/catch로
- *  감싸고, 실패 사유를 그대로 돌려줍니다. */
+ *  감싸고, 실패 사유를 그대로 돌려줍니다.
+ *  동시성: 재검사·API 호출·기록을 하나의 락 구간 안에서 직렬화합니다.
+ *  락 밖에서만 검사하면 두 번 동시 호출이 둘 다 '미발급'으로 보고
+ *  운송장을 2장 만들어, 나중 쓴 값이 먼저 발급된 송장을 덮어씁니다.
+ *  (송장번호 칸에 '발급중' 표식을 쓰는 대신 락을 잡고 호출하는 쪽을
+ *  택했습니다 — 표식은 손님 배송 조회에 그대로 보여 혼란을 주기 때문.)
+ *  발급은 관리자 수동 클릭이라 드물어, 호출 중 락을 잡고 있어도
+ *  다른 관리 작업이 오래 기다리지 않습니다. */
 function issueLogenTracking(data) {
   try {
     checkAdmin(data && data.key);
@@ -1116,6 +1250,7 @@ function issueLogenTracking(data) {
     var itemIds = (data && data.itemIds) || null;
     var sheet = getSheet();
     if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+    // 빠른 사전 검사 (락 없이) — 이미 발급됐으면 API를 부르지 않고 끝냅니다.
     var shipment = buildLogenShipment_(sheet, row, itemIds);
     if (shipment.error) return respond({ ok: false, error: shipment.error });
     if (shipment.alreadyTracked) {
@@ -1123,24 +1258,30 @@ function issueLogenTracking(data) {
     }
     var bodyRes = buildLogenRequestBody_(cfg, shipment);
     if (bodyRes.error) return respond({ ok: false, error: bodyRes.error });
-    var res = callLogenApi_(cfg, bodyRes.body);
-    if (!res.ok) {
-      return respond({ ok: false, error: '로젠 API 호출 실패 (HTTP ' + res.status + '): ' + (providerErrorText_(res) || '응답을 확인하세요.') });
-    }
-    var tracking = extractTrackingNumber_(
-      (res.data !== null && res.data !== undefined) ? res.data : res.text, cfg.trackingField);
-    tracking = String(tracking || '').replace(/[^0-9]/g, '');
-    if (!tracking) {
-      return respond({ ok: false, error: '송장번호를 응답에서 찾지 못했습니다. 응답의 송장번호 필드(LOGEN_API_TRACKING_FIELD)를 확인하세요. 응답: ' + String(res.text || '').slice(0, 200) });
-    }
+    // 재검사·API 호출·기록을 하나의 락 구간 안에서 직렬화합니다.
     var lock = LockService.getScriptLock();
-    lock.waitLock(20000);
+    lock.waitLock(30000);
     try {
-      if (shipment.kind === 'split') {
+      var fresh = buildLogenShipment_(sheet, row, itemIds);
+      if (fresh.error) return respond({ ok: false, error: fresh.error });
+      if (fresh.alreadyTracked) {
+        return respond({ ok: false, error: '이미 송장번호가 있습니다. (' + fresh.trackingNumber + ') 새로 발급하지 않았습니다.' });
+      }
+      var res = callLogenApi_(cfg, bodyRes.body);
+      if (!res.ok) {
+        return respond({ ok: false, error: '로젠 API 호출 실패 (HTTP ' + res.status + '): ' + (providerErrorText_(res) || '응답을 확인하세요.') });
+      }
+      var tracking = extractTrackingNumber_(
+        (res.data !== null && res.data !== undefined) ? res.data : res.text, cfg.trackingField);
+      tracking = String(tracking || '').replace(/[^0-9]/g, '');
+      if (!tracking) {
+        return respond({ ok: false, error: '송장번호를 응답에서 찾지 못했습니다. 응답의 송장번호 필드(LOGEN_API_TRACKING_FIELD)를 확인하세요. 응답: ' + String(res.text || '').slice(0, 200) });
+      }
+      if (fresh.kind === 'split') {
         var raw = sheet.getRange(row, 15).getDisplayValue();
         var overrides = parseDeliveryOverrides_(raw);
         var wanted = {};
-        for (var i = 0; i < shipment.itemIds.length; i++) wanted[String(shipment.itemIds[i])] = true;
+        for (var i = 0; i < fresh.itemIds.length; i++) wanted[String(fresh.itemIds[i])] = true;
         var matched = 0;
         for (var j = 0; j < overrides.length; j++) {
           if (wanted[overrides[j].itemId]) { overrides[j].trackingNumber = tracking; matched++; }
@@ -1150,10 +1291,10 @@ function issueLogenTracking(data) {
       } else {
         sheet.getRange(row, 13).setNumberFormat('@').setValue(tracking);
       }
+      return respond({ ok: true, row: row, kind: fresh.kind, trackingNumber: tracking });
     } finally {
       lock.releaseLock();
     }
-    return respond({ ok: true, row: row, kind: shipment.kind, trackingNumber: tracking });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
@@ -1336,8 +1477,10 @@ function deletePhoto(data) {
  *    심어 둡니다 (ensureCatalogSeeded_). 기본 4종이 탭에 들어간 뒤에는
  *    탭이 기준이 됩니다. 기본 4종 내용은 React의 config.ts와 같습니다.
  *  - 주문이 들어오면 카탈로그 가격 × 수량으로 금액을 서버에서 다시
- *    계산합니다 (repriceOrder_). 탭이 비어 있거나 탭에 없는 상품이
- *    섞여 있으면 클라이언트가 보낸 금액을 그대로 씁니다.
+ *    계산합니다 (repriceOrder_ — 노출 중단 상품 제외, 수량은 양의
+ *    정수만). 탭이 비어 있으면 기본 4종으로 계산하고, 탭에 없는 상품·
+ *    노출 중단 상품·수량 오류가 섞여 있으면 주문을 거부합니다
+ *    (클라이언트가 보낸 금액을 그대로 믿지 않습니다).
  *  - 상품 추가·수정·노출 변경은 관리자 전용(checkAdmin)입니다.
  *  - 사진 슬롯 키는 상품 id 기준입니다 ('hero' 제외). 옛 슬롯 키
  *    (product-home 등)는 홈페이지가 읽을 때만 폴백으로 봅니다.
@@ -1584,30 +1727,46 @@ function setProductActive(data) {
 
 /**
  * 주문 금액을 카탈로그 가격으로 다시 계산합니다.
- * 상품설정 탭이 비어 있으면 false를 돌려줘 클라이언트 금액을 유지합니다.
- * 탭에 없는 상품이 하나라도 섞여 있으면 전체를 클라이언트 금액으로 둡니다
+ * 노출 중단(active=false) 상품은 byId에 넣지 않아 주문할 수 없고,
+ * 수량이 양의 정수가 아니면 null을 돌려줘 주문을 거부하게 합니다.
+ * 상품설정 탭이 비어 있으면 기본 4종(FALLBACK_PRODUCTS)으로 계산합니다.
+ * 탭에 없는 상품이 하나라도 섞여 있으면 전체를 거부합니다
  * (일부만 다시 계산하면 내역과 합계가 어긋나기 때문입니다).
- * 성공하면 data.totalAmount와 data.productSummary를 갱신하고,
+ * 성공하면 data.totalAmount·data.totalQty·data.productSummary를 갱신하고,
  * 카탈로그 기준 내역을 배열로 돌려줍니다.
  */
 function repriceOrder_(data) {
+  // 카탈로그가 비어 있으면 기본 4종으로 다시 계산합니다 (홈페이지 기본값과 같음).
   var rows = readProducts_();
-  if (!rows.length) return null;
+  if (!rows.length) {
+    rows = FALLBACK_PRODUCTS.map(function (p) {
+      return { id: p.id, name: p.name, price: p.price, active: true };
+    });
+  }
+  // 노출 중단(active=false) 상품은 주문할 수 없게 byId에서 뺍니다.
   var byId = {};
-  for (var i = 0; i < rows.length; i++) byId[rows[i].id] = rows[i];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].active) byId[rows[i].id] = rows[i];
+  }
   var items = data.items || [];
+  if (!items.length) return null;
   var total = 0;
+  var totalQty = 0;
   var repriced = [];
   for (var j = 0; j < items.length; j++) {
     var it = items[j] || {};
     var catalog = byId[it.id];
     if (!catalog) return null;
-    var qty = Number(it.qty || 0);
+    // 수량은 양의 정수만 받습니다 (0·음수·소수·숫자 아님은 주문 거부).
+    var qty = Number(it.qty);
+    if (!isFinite(qty) || qty !== Math.floor(qty) || qty < 1) return null;
     var amount = catalog.price * qty;
     total += amount;
+    totalQty += qty;
     repriced.push({ id: it.id, name: catalog.name, qty: qty, price: catalog.price, amount: amount });
   }
   data.totalAmount = total;
+  data.totalQty = totalQty;
   data.productSummary = repriced.map(function (r) {
     return r.name + ' ' + r.qty + '박스';
   }).join(', ');
@@ -1898,11 +2057,15 @@ function countQueueStatus_(rows, status) {
 /**
  * 큐 배치 1회분을 1건씩 순차 발송합니다.
  * sendFn(phone, message)는 성공 시 true, 실패 시 false를 반환합니다.
- * 건마다 sleepFn(대기 시간)을 부릅니다 (마지막 건 뒤에도 쉽니다).
- * 순수 함수입니다 (sendFn/sleepFn을 주입받습니다).
+ * 건마다 sleepFn(대기 시간)을 부릅니다 — 마지막 건 뒤에는 쉬지 않습니다
+ * (대기 시간이 4건에 240초가 돼 6분 실행 제한에 다가가는 것을 막습니다).
+ * onSent(item, result)가 있으면 건마다 발송 직후 바로 부릅니다
+ * (호출자가 상태·발송일시·로그를 즉시 기록하게 — 배치 끝까지 미루면
+ *  중간에 타임아웃 날 때 이미 보낸 건이 '발송중'으로 남아 중복 발송됨).
+ * 순수 함수입니다 (sendFn/sleepFn/onSent를 주입받습니다).
  * 반환: [{phone, message, ok, error}] (보낸 순서 그대로)
  */
-function sendPromoBatch_(batch, sendFn, sleepFn) {
+function sendPromoBatch_(batch, sendFn, sleepFn, onSent) {
   var results = [];
   for (var i = 0; i < batch.length; i++) {
     var item = batch[i] || {};
@@ -1915,8 +2078,14 @@ function sendPromoBatch_(batch, sendFn, sleepFn) {
       ok = false;
       errText = String(e);
     }
-    results.push({ phone: item.phone, message: item.message, ok: ok, error: errText });
-    if (sleepFn) sleepFn(PROMO_QUEUE_SEND_DELAY_MS);
+    var res = { phone: item.phone, message: item.message, ok: ok, error: errText };
+    results.push(res);
+    // 건마다 발송 직후 즉시 기록합니다 (다음 건을 보내기 전, 대기 전).
+    if (onSent) {
+      try { onSent(item, res); } catch (e) { Logger.log('sendPromoBatch_ onSent failed: ' + e); }
+    }
+    // 마지막 건 뒤에는 쉬지 않습니다.
+    if (sleepFn && i < batch.length - 1) sleepFn(PROMO_QUEUE_SEND_DELAY_MS);
   }
   return results;
 }
@@ -2075,12 +2244,16 @@ function sendPromoTest(data) {
 /**
  * 홍보 문자 큐 처리기 — 시간 트리거(15분마다)로 실행됩니다.
  * 상태 '대기'인 행을 오래된 순으로 읽어, 한 번에 최대 4건까지만 보내고,
- * 건마다 60초 쉽니다. 4건이면 약 250초라 6분 실행 제한 안에 듭니다.
+ * 건 사이에만 60초 쉽니다 (마지막 건 뒤에는 안 쉬어 약 190초라
+ * 6분 실행 제한 안에 듭니다).
  * 하루 상한 100건(오늘 성공 합산)은 '문자발송기록' 탭으로 계산하고,
- * 남은 한도까지만 보냅니다. 보낸 행은 '발송완료'+발송일시, 실패는
- * '실패'+오류. 동시에 두 번 실행되지 않게, 행을 '발송중'으로 표시하는
- * 구간만 짧게 잠급니다. 15분 넘게 '발송중'인 행은 중단된 실행의 흔적이라
- * '대기'로 되돌려 다시 보냅니다.
+ * 남은 한도까지만 보냅니다.
+ * 순서: ① 복구(15분 넘게 '발송중'인 행을 '대기'로) — 한도 소진일에도
+ * 먼저 수행합니다. ② 한도 검사. ③ 보낼 배치 확보('발송중' 표시).
+ * ④ 건마다 발송 직후 즉시 '발송완료'/'실패' + 발송일시 + 로그를
+ * 기록합니다 (배치 끝까지 미루면 중간 타임아웃 시 이미 보낸 건이
+ * '발송중'으로 남아 15분 뒤 다시 보내져 고객이 중복 수신합니다).
+ * 동시에 두 번 실행되지 않게 ①~③ 구간만 짧게 잠급니다.
  */
 function processPromoQueue_() {
   var queueSheet = getPromoQueueSheet_();
@@ -2088,15 +2261,8 @@ function processPromoQueue_() {
   var now = new Date();
   var today = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd');
   var stamp = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-
-  var todaySent = readTodaySent_(logSheet, today);
-  var remaining = PROMO_DAILY_LIMIT - todaySent;
-  if (remaining <= 0) {
-    Logger.log('processPromoQueue_: 오늘 하루 한도(100건)를 모두 사용했습니다.');
-    return;
-  }
-
   var cutoffStamp = Utilities.formatDate(new Date(now.getTime() - 15 * 60 * 1000), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+
   var batch = [];
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
@@ -2107,6 +2273,8 @@ function processPromoQueue_() {
     var qLast = queueSheet.getLastRow();
     if (qLast < 2) return;
     var qRows = queueSheet.getRange(2, 1, qLast - 1, SMS_QUEUE_HEADERS.length).getDisplayValues();
+    // 1) 복구 먼저 — 한도 소진일에도 15분 넘게 '발송중'인 행은
+    // '대기'로 되돌립니다 (중단된 실행의 흔적).
     for (var i = 0; i < qRows.length; i++) {
       if (String(qRows[i][3] || '') === '발송중') {
         var startedStr = String(qRows[i][4] || '');
@@ -2118,6 +2286,14 @@ function processPromoQueue_() {
         }
       }
     }
+    // 2) 한도 검사 (복구 뒤에 — 복구된 행은 다시 보낼 수 있게).
+    var todaySent = readTodaySent_(logSheet, today);
+    var remaining = PROMO_DAILY_LIMIT - todaySent;
+    if (remaining <= 0) {
+      Logger.log('processPromoQueue_: 오늘 하루 한도(100건)를 모두 사용했습니다.');
+      return;
+    }
+    // 3) 보낼 배치 확보 ('대기' 행을 '발송중'으로 표시).
     var maxBatch = Math.min(PROMO_BATCH_SIZE, remaining);
     for (var j = 0; j < qRows.length && batch.length < maxBatch; j++) {
       if (String(qRows[j][3] || '') !== '대기') continue;
@@ -2131,16 +2307,14 @@ function processPromoQueue_() {
   }
   if (!batch.length) return;
 
-  var results = sendPromoBatch_(batch, sendSmsViaSmsGate_, function (ms) { Utilities.sleep(ms); });
-  for (var k = 0; k < batch.length; k++) {
-    var item = batch[k];
-    var res = results[k];
+  // 4) 건마다 발송 직후 즉시 상태·발송일시·로그를 기록합니다.
+  sendPromoBatch_(batch, sendSmsViaSmsGate_, function (ms) { Utilities.sleep(ms); }, function (item, res) {
     var sentStamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
     queueSheet.getRange(item.row, 4).setValue(res.ok ? '발송완료' : '실패');
     queueSheet.getRange(item.row, 6).setValue(sentStamp);
     if (!res.ok) queueSheet.getRange(item.row, 7).setValue(res.error || '발송 실패');
     logPromoSend_(logSheet, '홍보', item.message, 1, res.ok ? 1 : 0, res.ok ? 0 : 1, res.ok ? [] : [item.phone]);
-  }
+  });
 }
 
 /** processPromoQueue_ 시간 트리거가 이미 있는지 확인합니다. */
