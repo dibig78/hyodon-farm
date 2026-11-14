@@ -14,6 +14,9 @@
     --orange:#d9551f; --orange-dark:#b8430f; --orange-soft:#fdefe4;
     --green:#3c6644; --green-soft:#edf3ea; --red:#a83a2a; --red-soft:#fbe9e4;
     --gold:#a87718; --gold-soft:#fdf0e0;
+    --white:#fff; --header-bg:#2a2018; --header-ink:#fdf6ec; --header-muted:#cfbca9;
+    --green-dark:#2e5236; --warn-bg:#fff3e2; --warn-border:#e8cfa8; --paid-border:#c8d8c8; --gold-dark:#7a5a1c;
+    --danger-border:#e3b8b0;
     --radius:16px;
     --serif:"Gowun Batang","Nanum Myeongjo","Noto Serif KR",serif;
     --sans:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
@@ -21,37 +24,40 @@
   *{box-sizing:border-box}
   body{margin:0; font-family:var(--sans); color:var(--ink); background:var(--page); line-height:1.6}
   a{color:inherit}
-  .skip{position:absolute; left:-9999px; top:0; background:var(--ink); color:#fff; padding:10px 16px; border-radius:0 0 12px 0; font-weight:700; z-index:99}
+  .skip{position:absolute; left:-9999px; top:0; background:var(--ink); color:var(--white); padding:10px 16px; border-radius:0 0 12px 0; font-weight:700; z-index:99}
   .skip:focus{left:0}
   #main:focus{outline:none}
   h1, h2, h3{text-wrap:balance}
   button, input, select, a{touch-action:manipulation}
   .wrap{max-width:1060px; margin:0 auto; padding:0 16px}
-  header{background:#2a2018; color:#fdf6ec; padding:22px 0 18px}
+  header{background:var(--header-bg); color:var(--header-ink); padding:22px 0 18px}
   header h1{font-family:var(--serif); font-size:22px; margin:0}
-  header p{margin:4px 0 0; font-size:13.5px; color:#cfbca9}
+  header p{margin:4px 0 0; font-size:13.5px; color:var(--header-muted)}
   header .btn{margin-top:12px}
-  .warn{margin:16px 0 0; background:#fff3e2; border:1px solid #e8cfa8; border-radius:12px; padding:12px 14px; font-size:13.5px}
+  .warn{margin:16px 0 0; background:var(--warn-bg); border:1px solid var(--warn-border); border-radius:12px; padding:12px 14px; font-size:13.5px}
   .warn b{color:var(--red)}
   main{padding:20px 0 60px}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px}
   .card h2{font-family:var(--serif); font-size:18px; margin:0 0 6px}
   .card p{margin:0; font-size:14px; color:var(--muted)}
   label{display:block; font-size:13.5px; font-weight:700; margin-bottom:6px}
-  input[type="text"], input[type="search"], input[type="password"], select{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:15px; background:#fff}
+  input[type="text"], input[type="search"], input[type="password"], select{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:15px; background:var(--white)}
   input:focus, select:focus{border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14)}
   input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible{outline:2px solid var(--orange); outline-offset:2px}
   .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
   .row .grow{flex:1; min-width:220px}
-  .btn{display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 20px; border-radius:999px; border:1px solid transparent; font:inherit; font-weight:700; font-size:15px; cursor:pointer; text-decoration:none; background:var(--orange); color:#fff}
+  .btn{display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 20px; border-radius:999px; border:1px solid transparent; font:inherit; font-weight:700; font-size:15px; cursor:pointer; text-decoration:none; background:var(--orange); color:var(--white)}
   .btn:hover{background:var(--orange-dark)}
-  .btn--ghost{background:#fff; color:var(--ink); border-color:var(--line-strong)}
+  .btn--ghost{background:var(--white); color:var(--ink); border-color:var(--line-strong)}
   .btn--ghost:hover{border-color:var(--orange); color:var(--orange-dark)}
-  .btn--green{background:var(--green); color:#fff}
-  .btn--green:hover{background:#2e5236}
-  .btn--danger{background:#fff; color:var(--red); border-color:#e3b8b0}
-  .btn--danger.confirming{background:var(--red); color:#fff; border-color:var(--red)}
+  .btn--green{background:var(--green); color:var(--white)}
+  .btn--green:hover{background:var(--green-dark)}
+  .btn--danger{background:var(--white); color:var(--red); border-color:var(--danger-border)}
+  .btn--danger.confirming{background:var(--red); color:var(--white); border-color:var(--red)}
   .btn--danger:hover{border-color:var(--red); background:var(--red-soft)}
+  .btn--block{flex:1}
+  .mt12{margin-top:12px}
+  .order__meta{margin-top:8px}
   .btn--small{min-height:38px; padding:0 14px; font-size:14px}
   .btn--mini{min-height:32px; padding:0 11px; font-size:13px; border-radius:999px}
   .btn[disabled]{opacity:.5; cursor:default}
@@ -73,15 +79,15 @@
   .checkline{display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; min-height:44px; white-space:nowrap}
   .checkline input{width:18px; height:18px; accent-color:var(--green)}
   .filters{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px}
-  .filters button{min-height:40px; padding:0 16px; border-radius:999px; border:1px solid var(--line-strong); background:#fff; font:inherit; font-weight:700; font-size:14px; cursor:pointer}
-  .filters button.on{background:var(--ink); color:#fff; border-color:var(--ink)}
+  .filters button{min-height:40px; padding:0 16px; border-radius:999px; border:1px solid var(--line-strong); background:var(--white); font:inherit; font-weight:700; font-size:14px; cursor:pointer}
+  .filters button.on{background:var(--ink); color:var(--white); border-color:var(--ink)}
   .filters button:hover{border-color:var(--ink)}
   .bulkbar{display:none; gap:8px; flex-wrap:wrap; align-items:center; background:var(--surface-alt); border:1px solid var(--line-strong); border-radius:12px; padding:10px 12px; margin-bottom:12px; font-size:14px; font-weight:700}
   .bulkbar.show{display:flex}
   .bulkbar .spacer{flex:1}
   .order{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:12px}
   @media screen{ .order{content-visibility:auto; contain-intrinsic-size:auto 220px} }
-  .order.is-paid{border-color:#c8d8c8}
+  .order.is-paid{border-color:var(--paid-border)}
   .order.selected{outline:2px solid var(--orange); outline-offset:-2px}
   .order__top{display:flex; gap:12px; align-items:flex-start}
   .order__check{margin-top:4px}
@@ -96,9 +102,9 @@
   .order dd{margin:0; overflow-wrap:anywhere}
   .order dd a{color:var(--orange-dark); font-weight:700}
   .badge{display:inline-block; padding:2px 10px; border-radius:999px; font-size:12.5px; font-weight:700}
-  .badge--unpaid{background:#fbe9e4; color:var(--red)}
+  .badge--unpaid{background:var(--red-soft); color:var(--red)}
   .badge--paid{background:var(--green-soft); color:var(--green)}
-  .badge--notracking{background:#fdf0e0; color:#7a5a1c}
+  .badge--notracking{background:var(--gold-soft); color:var(--gold-dark)}
   .order__actions{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; border-top:1px solid var(--line); padding-top:14px}
   .order__actions .field{flex:1; min-width:180px}
   .order__subactions{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; padding-top:12px; border-top:1px dashed var(--line)}
@@ -137,7 +143,7 @@
   <section class="card" id="setupCard">
     <h2>연결 설정</h2>
     <p>Apps Script 웹앱 주소(<code>/exec</code>로 끝나는 주소)와 관리자 키를 한 번만 입력하면 이 기기에 저장됩니다. 관리자 키는 손님에게 절대 알려주지 마세요.</p>
-    <div class="row" style="margin-top:12px">
+    <div class="row mt12">
       <div class="grow">
         <label for="scriptUrl">Apps Script 웹앱 URL</label>
         <input type="text" id="scriptUrl" name="scriptUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
@@ -147,8 +153,8 @@
         <input type="password" id="adminKey" name="adminKey" placeholder="Apps Script 편집기의 ADMIN_KEY와 같은 값" autocomplete="off">
       </div>
     </div>
-    <div class="row" style="margin-top:12px">
-      <button class="btn" type="button" id="saveUrlBtn" style="flex:1">저장하고 주문 불러오기</button>
+    <div class="row mt12">
+      <button class="btn btn--block" type="button" id="saveUrlBtn">저장하고 주문 불러오기</button>
     </div>
     <p class="status" id="keyStatus" aria-live="polite"></p>
     <p class="status" id="setupStatus" aria-live="polite"></p>
@@ -416,7 +422,7 @@
             '<label class="order__check"><input type="checkbox" class="js-select" ' + (selected[o.row] ? 'checked' : '') + ' aria-label="선택"></label>' +
             '<div class="order__body">' +
               '<div class="order__head"><h3>' + esc(o.receiver || "") + ' — ' + esc(o.product || "") + '</h3><time>' + esc(o.datetime || "") + '</time></div>' +
-              '<div style="margin-top:8px">' + paidBadge + ' ' + trackBadge + ' <span class="order__amount">' + won(o.amount) + '</span></div>' +
+              '<div class="order__meta">' + paidBadge + ' ' + trackBadge + ' <span class="order__amount">' + won(o.amount) + '</span></div>' +
               '<dl>' +
                 '<dt>수량</dt><dd>' + esc(o.qty) + '박스</dd>' +
                 '<dt>입금자명</dt><dd>' + esc(o.depositor || "") + '</dd>' +
@@ -663,7 +669,7 @@
     var pages = list.map(function (o, idx) {
       var w = barcodeWidths(o.tracking || "");
       return '' +
-        '<div class="waybill"' + (idx < list.length - 1 ? ' style="page-break-after:always"' : "") + '>' +
+        '<div class="waybill' + (idx < list.length - 1 ? ' waybill--break' : '') + '">' +
           '<div class="wb-head"><span>로젠택배 운송장</span><span class="wb-prepaid">선불</span></div>' +
           '<div class="wb-track"><div class="wb-trackno">' + esc(o.tracking || "") + '</div>' +
           '<canvas id="bc' + idx + '" data-code="' + esc(o.tracking || "") + '" width="' + w + '" height="56" aria-hidden="true"></canvas></div>' +
@@ -681,6 +687,7 @@
       '<title>운송장 인쇄 - 효돈농원</title><style>' +
       'body{margin:0;font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;color:#111;background:#fff}' +
       '.waybill{width:680px;max-width:96vw;margin:24px auto;border:2px solid #111;padding:20px 22px;box-sizing:border-box}' +
+      '.waybill--break{page-break-after:always}' +
       '.wb-head{display:flex;justify-content:space-between;align-items:center;font-size:22px;font-weight:800;border-bottom:2px solid #111;padding-bottom:10px}' +
       '.wb-prepaid{font-size:15px;border:2px solid #111;border-radius:8px;padding:2px 10px}' +
       '.wb-track{text-align:center;padding:14px 0 6px;border-bottom:1px solid #999}' +
