@@ -5,6 +5,9 @@
  *   1) 홈페이지(index.html)에서 보낸 주문 JSON을 받아
  *   2) 스프레드시트 '효돈농원 직거래 주문 접수' 맨 아래에 한 줄로 추가합니다.
  *   3) 주문일시는 한국 시간(KST)으로 기록합니다.
+ *   4) 관리자 페이지(admin.html)용 목록 조회(?action=list)와
+ *      입금확인·송장번호 업데이트(action=update)도 처리합니다.
+ *      관리자 기능은 OWNER_EMAIL과 같은 Google 계정으로 로그인했을 때만 동작합니다.
  *
  * 설치 방법은 같은 저장소의 apps-script/README.md 를 보세요.
  * ------------------------------------------------------------
@@ -25,6 +28,16 @@ var TIMEZONE = 'Asia/Seoul';
  */
 var NOTIFY_EMAIL = '';
 
+/**
+ * 관리자 전용 기능(주문 목록·입금확인·송장번호)을 쓸 본인 Gmail 주소.
+ * 반드시 여기에 본인 Gmail을 넣으세요. 예: 'dibig788@gmail.com'
+ * 비워 두면 관리자 기능은 동작하지 않습니다.
+ * 보안상 GitHub 저장소에는 빈칸으로 두고, Apps Script 편집기에서만 입력하세요.
+ * 웹앱 배포 설정은 '실행: 나', '액세스: Google 계정이 있는 모든 사용자'로 해야
+ * 접속한 사람의 Gmail을 확인할 수 있습니다.
+ */
+var OWNER_EMAIL = '';
+
 /** 시트 1행 헤더 (index.html 설정과 순서가 같아야 합니다) */
 var HEADERS = [
   '주문일시', '상품명', '수량', '총금액', '입금자명', '주문자',
@@ -40,6 +53,9 @@ function doPost(e) {
     if (!raw) return respond({ ok: false, error: 'no_data' });
 
     var data = JSON.parse(raw);
+
+    // 관리자 업데이트 (admin.html에서 보낸 요청)
+    if (data.action === 'update') return adminUpdate(data);
 
     // 필수값 확인 (홈페이지에서도 검사하지만 마지막으로 한 번 더)
     var missing = [];
@@ -101,7 +117,9 @@ function doPost(e) {
 /* ============================================================
  *  상태 확인용 (브라우저로 주소를 열면 동작 여부를 보여줍니다)
  * ============================================================ */
-function doGet() {
+function doGet(e) {
+  // 관리자 주문 목록 조회 (admin.html에서 ?action=list 로 호출)
+  if (e && e.parameter && e.parameter.action === 'list') return adminList();
   var status = 'ok';
   var message = '효돈농원 주문 접수 서비스가 동작 중입니다.';
   try {
@@ -118,6 +136,73 @@ function doGet() {
     message: message,
     time: Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss')
   });
+}
+
+/* ============================================================
+ *  관리자 전용 (admin.html)
+ *  - OWNER_EMAIL과 접속한 Google 계정이 같을 때만 동작합니다.
+ * ============================================================ */
+function requireOwner() {
+  if (!OWNER_EMAIL) throw new Error('OWNER_EMAIL을 Code.gs에 입력하세요.');
+  var me = '';
+  try { me = Session.getActiveUser().getEmail(); } catch (err) { me = ''; }
+  if (!me) throw new Error('Google 계정으로 로그인한 뒤 다시 여세요. 웹앱 배포 설정이 "Google 계정이 있는 모든 사용자"인지 확인하세요.');
+  if (me.toLowerCase() !== String(OWNER_EMAIL).toLowerCase()) {
+    throw new Error('관리자 계정이 아닙니다: ' + me);
+  }
+}
+
+function adminList() {
+  try {
+    requireOwner();
+    var sheet = getSheet();
+    ensureHeader(sheet);
+    var lastRow = sheet.getLastRow();
+    var orders = [];
+    if (lastRow >= 2) {
+      var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getDisplayValues();
+      for (var i = 0; i < values.length; i++) {
+        var r = values[i];
+        if (!String(r[0] || '').trim() && !String(r[5] || '').trim()) continue;
+        orders.push({
+          row: i + 2,
+          datetime: r[0], product: r[1], qty: Number(r[2] || 0),
+          amount: Number(String(r[3] || '0').replace(/[^0-9]/g, '') || 0),
+          depositor: r[4], orderer: r[5], ordererPhone: r[6],
+          receiver: r[7], receiverPhone: r[8], receiverAddress: r[9],
+          memo: r[10], paid: String(r[11] || '').trim() !== '',
+          paidText: r[11], tracking: r[12]
+        });
+      }
+    }
+    orders.reverse(); // 최신 주문이 위로
+    return respond({ ok: true, orders: orders });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+function adminUpdate(data) {
+  try {
+    requireOwner();
+    var row = Number(data.row || 0);
+    if (!row || row < 2) return respond({ ok: false, error: '잘못된 행 번호입니다.' });
+    var sheet = getSheet();
+    if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      // L열(12): 입금확인 — 체크되면 '확인'이라고 적고, 해제되면 비웁니다.
+      sheet.getRange(row, 12).setValue(data.paid ? '확인' : '');
+      // M열(13): 송장번호
+      sheet.getRange(row, 13).setValue(safe(data.tracking));
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, row: row });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
 }
 
 /* ============================================================
