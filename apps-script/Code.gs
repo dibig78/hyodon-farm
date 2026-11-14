@@ -2903,7 +2903,7 @@ function getOptedOutPhones_() {
   var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
   for (var i = 0; i < rows.length; i++) {
     var flag = String(rows[i][3] || '').trim().toUpperCase();
-    if (flag === 'TRUE' || flag === '1') {
+    if (flag === 'TRUE' || flag === '1' || flag === 'Y') {
       var phone = normalizeMobileDigits_(rows[i][0]);
       if (isValidMobileDigits_(phone)) out.push(phone);
     }
@@ -3124,7 +3124,7 @@ function listPromoRecipients(data) {
             phone: normalizeMobileDigits_(String(rows[i][0] || '')),
             name: String(rows[i][1] || ''),
             memo: String(rows[i][2] || ''),
-            optOut: flag === 'TRUE' || flag === '1',
+            optOut: flag === 'TRUE' || flag === '1' || flag === 'Y',
             createdAt: String(rows[i][4] || '')
           });
         }
