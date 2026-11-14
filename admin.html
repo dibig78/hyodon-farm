@@ -43,6 +43,7 @@
   .btn--green{background:var(--green); color:#fff}
   .btn--green:hover{background:#2e5236}
   .btn--danger{background:#fff; color:var(--red); border-color:#e3b8b0}
+  .btn--danger.confirming{background:var(--red); color:#fff; border-color:var(--red)}
   .btn--danger:hover{border-color:var(--red); background:var(--red-soft)}
   .btn--small{min-height:38px; padding:0 14px; font-size:14px}
   .btn--mini{min-height:32px; padding:0 11px; font-size:13px; border-radius:999px}
@@ -202,6 +203,7 @@
       <span id="bulkCount">0건 선택됨</span>
       <span class="spacer"></span>
       <button class="btn btn--green btn--small" type="button" id="bulkPaidBtn">선택 입금확인</button>
+      <button class="btn btn--ghost btn--small" type="button" id="bulkPrintBtn">선택 송장 인쇄</button>
       <button class="btn btn--danger btn--small" type="button" id="bulkDeleteBtn">선택 삭제</button>
       <button class="btn btn--ghost btn--small" type="button" id="bulkClearBtn">선택 해제</button>
     </div>
@@ -405,13 +407,27 @@
               '<div class="order__subactions">' +
                 '<button type="button" class="btn btn--ghost btn--mini js-copy-summary">주문요약 복사</button>' +
                 '<button type="button" class="btn btn--ghost btn--mini js-copy-address">주소 복사</button>' +
+                '<button type="button" class="btn btn--ghost btn--mini js-print-waybill">송장 인쇄</button>' +
                 (recvPhone ? '<a class="btn btn--ghost btn--mini" href="sms:' + recvPhone + '&body=' + encodeURIComponent('[효돈농원] ' + (o.receiver || '') + '님, 주문하신 ' + (o.product || '') + ' ' + o.qty + '박스가 로젠택배로 출고되었습니다. 송장번호는 입금 확인 후 안내드립니다.') + '">배송문자 보내기</a>' : '') +
                 '<button type="button" class="btn btn--danger btn--mini js-delete">주문 삭제</button>' +
+                '<button type="button" class="btn btn--ghost btn--mini js-cancel-delete" hidden>취소</button>' +
               '</div>' +
             '</div>' +
           '</div>' +
         '</article>';
     }).join("");
+  }
+
+  /* ---------- 저장·삭제 (브라우저 확인창 없이 인라인 2단계 확인) ---------- */
+  var pendingDelete = {};
+  function resetDeleteBtn(row) {
+    if (pendingDelete[row]) { clearTimeout(pendingDelete[row]); delete pendingDelete[row]; }
+    var card = document.querySelector('.order[data-row="' + row + '"]');
+    if (!card) return;
+    var btn = card.querySelector(".js-delete");
+    if (btn) { btn.textContent = "주문 삭제"; btn.classList.remove("confirming"); btn.disabled = false; }
+    var cancel = card.querySelector(".js-cancel-delete");
+    if (cancel) cancel.hidden = true;
   }
 
   /* ---------- 저장·삭제 ---------- */
@@ -446,7 +462,20 @@
     var row = Number(card.getAttribute("data-row"));
     var o = orders.filter(function (x) { return x.row === row; })[0];
     var label = o ? (o.receiver + " — " + o.product + " (" + won(o.amount) + ")") : (row + "행");
-    if (!window.confirm("정말 삭제할까요?\n" + label + "\n시트에서도 행이 사라집니다.")) return;
+    var btn = card.querySelector(".js-delete");
+    if (!pendingDelete[row]) {
+      pendingDelete[row] = setTimeout(function () { resetDeleteBtn(row); }, 6000);
+      btn.textContent = "정말 삭제?";
+      btn.classList.add("confirming");
+      var cancel = card.querySelector(".js-cancel-delete");
+      if (cancel) cancel.hidden = false;
+      setStatus(listStatus, label + " — 정말 삭제하려면 같은 버튼을 한 번 더 누르세요. (6초 뒤 원래대로 돌아갑니다)");
+      return;
+    }
+    clearTimeout(pendingDelete[row]);
+    delete pendingDelete[row];
+    btn.disabled = true;
+    btn.textContent = "삭제 중…";
     postAdmin({ action: "delete", row: row, key: getKey() })
       .then(function (data) {
         if (!data || !data.ok) throw new Error((data && data.error) || "삭제에 실패했습니다.");
@@ -476,10 +505,26 @@
       })
       .catch(function (err) { setStatus(listStatus, "일괄 저장 실패: " + err.message, true); });
   }
+  var bulkDeletePending = null;
   function bulkDelete() {
     var rows = Object.keys(selected).filter(function (r) { return selected[r]; }).map(Number).sort(function (a, b) { return b - a; });
     if (!rows.length) return;
-    if (!window.confirm(rows.length + "건을 정말 삭제할까요?\n시트에서도 행이 사라집니다.")) return;
+    var btn = $("#bulkDeleteBtn");
+    if (!bulkDeletePending) {
+      bulkDeletePending = setTimeout(function () {
+        bulkDeletePending = null;
+        btn.textContent = "선택 삭제";
+        btn.classList.remove("confirming");
+      }, 6000);
+      btn.textContent = "정말 삭제할까요? (" + rows.length + "건)";
+      btn.classList.add("confirming");
+      setStatus(listStatus, rows.length + "건을 삭제하려면 같은 버튼을 한 번 더 누르세요. (6초 뒤 원래대로 돌아갑니다)");
+      return;
+    }
+    clearTimeout(bulkDeletePending);
+    bulkDeletePending = null;
+    btn.textContent = "선택 삭제";
+    btn.classList.remove("confirming");
     var chain = Promise.resolve();
     rows.forEach(function (r) {
       chain = chain.then(function () {
@@ -554,6 +599,97 @@
     setStatus(toolStatus, list.length + "건을 CSV로 내보냈습니다.");
   }
 
+  /* ---------- 송장 인쇄 (로젠택배 운송장) ---------- */
+  var WAYBILL_SENDER = { name: "효돈농원", phone: "010-2696-1326", address: "제주특별자치도 서귀포시 칠십리로 636 (하효동 1233)" };
+  // Code 39: n=좁은 요소, w=넓은 요소 (바·공백 교대로 9개). '*'는 시작/끝 표시.
+  var CODE39 = {
+    "0": "nnnwwnwnn", "1": "wnnwnnnnw", "2": "nnwwnnnnw", "3": "wnwwnnnnn",
+    "4": "nnnwwnnnw", "5": "wnnwwnnnn", "6": "nnwwwnnnn",
+    "7": "nnnwnnwnw", "8": "wnnwnnwnn", "9": "nnwwnnwnn", "*": "nwnnwnwnn"
+  };
+  function barcodeWidths(code) {
+    // 바코드 전체 너비(단위 픽셀) 계산: 좁은 요소 2, 넓은 요소 6, 글자 사이 간격 2
+    var chars = ("*" + code + "*").split("");
+    var w = 0;
+    chars.forEach(function (ch) {
+      var pat = CODE39[ch] || "";
+      for (var i = 0; i < pat.length; i++) w += pat[i] === "w" ? 6 : 2;
+      w += 2;
+    });
+    return w;
+  }
+  function buildWaybillDoc(list) {
+    var barcodeScript = [
+      "var C39=" + JSON.stringify(CODE39) + ";",
+      "function draw(id, code){",
+      "  var cv=document.getElementById(id); if(!cv) return;",
+      "  var ctx=cv.getContext('2d'); var chars=('*'+code+'*').split('');",
+      "  var x=0; ctx.fillStyle='#111';",
+      "  chars.forEach(function(ch){ var pat=C39[ch]||'';",
+      "    for(var i=0;i<pat.length;i++){ var w=pat[i]==='w'?6:2;",
+      "      if(i%2===0) ctx.fillRect(x,0,w,56); x+=w; } x+=2; });",
+      "}",
+      "window.addEventListener('load', function(){",
+      "  document.querySelectorAll('canvas[data-code]').forEach(function(cv){ draw(cv.id, cv.getAttribute('data-code')); });",
+      "  setTimeout(function(){ window.print(); }, 400);",
+      "});"
+    ].join("\n");
+    var pages = list.map(function (o, idx) {
+      var w = barcodeWidths(o.tracking || "");
+      return '' +
+        '<div class="waybill"' + (idx < list.length - 1 ? ' style="page-break-after:always"' : "") + '>' +
+          '<div class="wb-head"><span>로젠택배 운송장</span><span class="wb-prepaid">선불</span></div>' +
+          '<div class="wb-track"><div class="wb-trackno">' + esc(o.tracking || "") + '</div>' +
+          '<canvas id="bc' + idx + '" data-code="' + esc(o.tracking || "") + '" width="' + w + '" height="56"></canvas></div>' +
+          '<div class="wb-grid">' +
+            '<div class="wb-box"><h3>보내는 분</h3><p>' + esc(WAYBILL_SENDER.name) + '<br>' + esc(WAYBILL_SENDER.phone) + '<br>' + esc(WAYBILL_SENDER.address) + '</p></div>' +
+            '<div class="wb-box"><h3>받는 분</h3><p>' + esc(o.receiver || "") + ' · ' + esc(o.receiverPhone || "") + '<br>' + esc(o.receiverAddress || "") + '</p></div>' +
+          '</div>' +
+          '<div class="wb-box"><h3>상품</h3><p>' + esc(o.product || "") + ' ' + esc(o.qty) + '박스 · ' + won(o.amount) + '</p>' +
+          (o.memo ? '<p>요청사항: ' + esc(o.memo) + '</p>' : '') + '</div>' +
+          '<div class="wb-note">신선식품 · 파손주의 · 주문일시 ' + esc(o.datetime || "") + '<br>송장번호는 로젠택배 영업소에서 발급받은 번호입니다. 배송 조회: ilogen.com</div>' +
+        '</div>';
+    }).join("");
+    return '<!doctype html><html lang="ko"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>운송장 인쇄 - 효돈농원</title><style>' +
+      'body{margin:0;font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;color:#111;background:#fff}' +
+      '.waybill{width:680px;max-width:96vw;margin:24px auto;border:2px solid #111;padding:20px 22px;box-sizing:border-box}' +
+      '.wb-head{display:flex;justify-content:space-between;align-items:center;font-size:22px;font-weight:800;border-bottom:2px solid #111;padding-bottom:10px}' +
+      '.wb-prepaid{font-size:15px;border:2px solid #111;border-radius:8px;padding:2px 10px}' +
+      '.wb-track{text-align:center;padding:14px 0 6px;border-bottom:1px solid #999}' +
+      '.wb-trackno{font-size:30px;font-weight:800;letter-spacing:4px}' +
+      '.wb-track canvas{display:block;margin:6px auto 0;max-width:100%}' +
+      '.wb-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}' +
+      '.wb-box{border-bottom:1px solid #999;padding:12px 4px}' +
+      '.wb-box h3{margin:0 0 6px;font-size:14px;color:#555}' +
+      '.wb-box p{margin:0;font-size:16px;line-height:1.6;word-break:keep-all;overflow-wrap:break-word}' +
+      '.wb-note{padding-top:10px;font-size:13px;color:#444;line-height:1.6}' +
+      '.no-print{text-align:center;margin:16px}' +
+      '.no-print button{font-size:16px;padding:10px 22px;border-radius:999px;border:1px solid #111;background:#111;color:#fff;cursor:pointer}' +
+      '@media print{ body{background:#fff} .waybill{margin:0 auto} .no-print{display:none} }' +
+      '</style></head><body>' + pages +
+      '<div class="no-print"><button type="button" onclick="window.print()">인쇄하기</button></div>' +
+      '<script>' + barcodeScript + '</' + 'script></body></html>';
+  }
+  function printWaybills(list) {
+    var withTracking = list.filter(function (o) { return (o.tracking || "").trim(); });
+    var skipped = list.length - withTracking.length;
+    if (!withTracking.length) {
+      setStatus(toolStatus, "송장번호가 있는 주문이 없습니다. 송장번호를 입력하고 저장한 뒤 인쇄하세요.", true);
+      return;
+    }
+    var w = window.open("", "_blank");
+    if (!w) {
+      setStatus(toolStatus, "팝업이 차단됐습니다. 브라우저에서 팝업을 허용하고 다시 눌러주세요.", true);
+      return;
+    }
+    w.document.write(buildWaybillDoc(withTracking));
+    w.document.close();
+    if (skipped) setStatus(toolStatus, "송장번호 없는 " + skipped + "건은 빼고 " + withTracking.length + "건의 송장을 인쇄합니다.");
+    else setStatus(toolStatus, withTracking.length + "건의 송장을 인쇄합니다.");
+  }
+
   /* ---------- 자동 새로고침 ---------- */
   function hasUnsavedEdits() {
     if (document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA" || document.activeElement.tagName === "SELECT")) return true;
@@ -599,7 +735,15 @@
   $("#printBtn").addEventListener("click", function () { window.print(); });
   $("#bulkPaidBtn").addEventListener("click", bulkPaid);
   $("#bulkDeleteBtn").addEventListener("click", bulkDelete);
-  $("#bulkClearBtn").addEventListener("click", function () { selected = {}; render(); });
+  $("#bulkPrintBtn").addEventListener("click", function () {
+    var list = filteredOrders().filter(function (o) { return selected[o.row]; });
+    printWaybills(list);
+  });
+  $("#bulkClearBtn").addEventListener("click", function () {
+    if (bulkDeletePending) { clearTimeout(bulkDeletePending); bulkDeletePending = null; }
+    var b = $("#bulkDeleteBtn"); b.textContent = "선택 삭제"; b.classList.remove("confirming");
+    selected = {}; render();
+  });
   $("#selectAll").addEventListener("change", function (e) {
     var list = filteredOrders();
     list.forEach(function (o) { selected[o.row] = e.target.checked; });
@@ -622,6 +766,8 @@
     var o = orders.filter(function (x) { return x.row === row; })[0];
     if (t.classList.contains("js-save")) { saveOrder(card); return; }
     if (t.classList.contains("js-delete")) { deleteOrder(card); return; }
+    if (t.classList.contains("js-cancel-delete")) { resetDeleteBtn(row); return; }
+    if (t.classList.contains("js-print-waybill") && o) { printWaybills([o]); return; }
     if (t.classList.contains("js-copy-summary") && o) { copyText(orderSummary(o), "주문요약을 복사했습니다."); return; }
     if (t.classList.contains("js-copy-address") && o) {
       copyText((o.receiver || "") + " " + (o.receiverPhone || "") + " / " + (o.receiverAddress || ""), "주소를 복사했습니다.");
