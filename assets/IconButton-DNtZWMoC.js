@@ -1,0 +1,1 @@
+import{W as e}from"./api-BgiSu_yi.js";import{a as t}from"./focusOutline.stylex-B7ZIy5_U.js";var n=t();function r({icon:t,...r}){return(0,n.jsx)(e,{...r,icon:t,isIconOnly:!0})}r.displayName=`IconButton`;export{r as t};

@@ -1,5 +1,49 @@
 # 변경 내역 (효돈농원 직거래 주문 페이지)
 
+## 2026-11-14 — 사진 업데이트 · 상품 관리 · 문자 알림 · 갤러리 · 디자인 수정
+
+### 사진 업데이트 기능 (관리자 페이지에서 홈페이지 사진 교체)
+- 저장 방식: Google Drive 경유 (GitHub 토큰 안 씀). 올릴 때 브라우저에서 최대 1600px JPEG 0.85로 줄인 뒤 base64로 전송, 5MB 상한.
+- `apps-script/Code.gs`: "사진설정" 탭(키·Drive 파일 ID·URL·수정 시각), Drive 폴더 "효돈농원 홈페이지 사진". GET `?action=photos`(배포 1, 공개) → `{ok:true, photos:{키:URL}}`, POST `uploadPhoto`/`deletePhoto`(배포 2, 관리자 키 확인) — 업로드 시 Drive 공유를 링크 있는 사람 보기로 바꾸고 썸네일 URL(`drive.google.com/thumbnail?id=...&sz=w1200`)을 탭에 저장, 삭제 시 탭 행만 지워 기본 이미지로 복귀. 슬롯: hero, product-home, product-gift, product-mixed, product-golden-gift (상품 추가 시 상품 id 기준으로 동적 확장, 갤러리 6슬롯은 아래 참고).
+- React: `src/lib/photos.ts` 신규. 홈페이지는 `?action=photos`를 불러와 커스텀 URL이 있으면 미리 로드한 뒤 교체(깜빡임 없음, 실패 시 기본 이미지). 관리자 페이지 "사진 관리"에서 슬롯별 미리보기·업로드·"기본 이미지로 되돌리기".
+- 검증: node 문법 검사, 빌드 성공, doctor fail 0, 검수 36/36, 사진 전용 검수 31/31 통과.
+- 편집기 작업 + 재배포 완료 (2026-11-14 20:22 배포 1 v11 · 20:24 배포 2 v12, URL 동일): 코드 3곳만 수술식으로 추가, OWNER_EMAIL·ADMIN_KEY 실제 값 보존, 저장 중 뜬 여분 `)` 구문 오류 1건 수정 후 "Drive에 저장됨". `?action=photos` curl 확인: `{"ok":true,"photos":{}}` (설정 비어 있어 빈 객체가 정상).
+- 사진 업로드 라이브 테스트는 아직 안 함 (React dist 푸시 후 진행).
+
+### 상품 관리 기능 (관리자 페이지에서 상품 추가·가격 변경·노출 중단)
+- `apps-script/Code.gs`: "상품설정" 탭(id·이름·가격·단위·이미지키·노출·정렬·설명). GET `?action=products`(배포 1, 공개, 노출 중인 것만), GET `?action=productsAll`(배포 2, 관리자용), POST `upsertProduct`/`setProductActive`(배포 2, 관리자용; 삭제는 노출 중단으로만 처리). 첫 수정 때 기본 4종이 탭에 자동 저장됨. 주문 접수 시 상품이 탭에 있으면 서버가 카탈로그 가격 × 수량으로 금액을 다시 계산하고, 탭에 없거나 탭이 비어 있으면 기존 방식(손님 화면 금액) 유지.
+- React: `src/lib/products.ts` 신규. 홈페이지는 `?action=products`를 불러오고 탭이 비어 있으면 기본 4종 표시. 관리자 페이지 "상품 관리"에서 목록·이름/가격/단위/설명 수정·추가·노출 중단/재노출. 새 상품의 사진은 상품이 탭에 생긴 뒤에 업로드 가능.
+- 검증: 빌드 성공, doctor fail 0, 검수 36/36, 사진 31/31, 상품 전용 검수 32/32 통과.
+- 상태: 편집기 추가 + 재배포 완료 (2026-11-14 20:39, 배포 1 v13·배포 2 v14, ?action=products 확인 {"ok":true,"products":[]}). GitHub 기준본 커밋 ddd7901.
+
+### 새 주문 문자 알림 (Textbee)
+- 주문 접수 후 농원 폰(010-2696-1326)으로 문자 1건 발송: "[효돈농원] 새 주문: {상품} {금액}원, {주문자} {전화} (입금자명: {입금자명})". 문자 실패해도 주문 접수는 유지됨. API 키가 비어 있으면 조용히 건너뜀.
+- `apps-script/Code.gs`: `TEXTBEE_API_KEY`(빈칸, 동우님이 직접 입력)·`NOTIFY_PHONE`, `testNotify`(배포 2, 관리자용 — "[효돈농원] 문자 알림 테스트입니다." 발송). 엔드포인트 POST https://api.textbee.dev/api/v1/gateway/send-sms, x-api-key 헤더, 수신자 +82 형식. 관리자 페이지에 "문자 알림 테스트" 버튼 추가.
+- 검증: mock 전용 검수 21/21 통과, 빌드·doctor·기타 검수(36/36·31/31·32/32) 전부 통과.
+- Textbee 요금 (2026-11-14 확인): 무료 하루 50건·월 300건·기기 1대, 0원 영구 무료. Pro $14.99/월(연간 결제 시 $8.33/월) — 월 5,000건·기기 5대·일일 한도 없음. "일일 150건"은 Textbee 한도가 아니라 통신사 차단 위험 기준(권장 80~100건/일). 무료 한도를 넘기면 과금이 아니라 그달 발송이 멈춤.
+- 키 발급 방법 (2026-11-14 확인): textbee.dev 대시보드 → API Keys → Generate API Key — 한 번만 보여주니 복사해서 보관, 분실 시 새로 발급. 앱은 textbee.dev/download APK로 설치(플레이스토어 없음), SMS 권한 허용 후 QR 스캔 또는 키 수동 입력으로 기기 등록. 키를 넣는 곳은 textbee.dev가 아니라 Apps Script 편집기 Code.gs의 `TEXTBEE_API_KEY` 자리.
+- 상태: Textbee 버전은 폐기하고 android-sms-gateway Cloud 버전으로 교체 (커밋 5bf75ee, 검수 45/45, Textbee 문자열 0건). 편집기 추가 + 재배포 완료 (2026-11-14 20:44, 배포 1 v15·배포 2 v16, photos·products 엔드포인트 확인). 계정 입력과 라이브 테스트는 동우님이 앱 등록 후 편집기에 SMSGATE_USERNAME·SMSGATE_PASSWORD를 입력한 뒤에 진행.
+
+### 농장 갤러리
+- 홈페이지 "농장 갤러리" 섹션 (FAQ 뒤, CTA 앞): 기존 "효돈농원의 귤" 2장짜리 섹션을 대체함. 그리드(모바일 2열·데스크톱 3열), 라이트박스(이미지 카운터·이전/다음·방향키·Esc·포커스 복원). 슬롯 gallery-1~gallery-6, 커스텀 URL이 없으면 기본 3장(히어로·귤밭·황금향) 순환. 관리자 페이지 "사진 관리"에 갤러리 그룹 추가.
+- `apps-script/Code.gs` 변경: PHOTO_KEYS에 'gallery-1'~'gallery-6'만 추가하면 됨.
+- 검증: 빌드 성공, doctor fail 0, 검수 36/36, 사진 34/34, 상품 32/32, 갤러리 전용 검수 40/40 통과.
+- 상태: 편집기 추가 + 재배포 완료 (2026-11-14 20:39, 배포 1 v13·배포 2 v14, PHOTO_KEYS에 gallery-1~6 포함). 실사진은 아직 없음 (기본 3장 순환 중, 교체 예정).
+- 대안 조사 (2026-11-14): Textbee 한도 때문에 GitHub에서 휴대폰 문자 발송 서비스 조사. capcom6/android-sms-gateway(별 6,012개) — 로컬 모드는 무료·한도 없음이나 Apps Script(클라우드)에서 폰 LAN에 닿지 않아 클라우드 모드나 NAS·PC 중계 필요. Textbee 직접 설치도 한도 없음이 공식 문서로 확인됐으나 서버(Docker·MongoDB·Redis·Firebase·도메인·SMTP) + APK 직접 빌드 필요. 동우님 결정: 일단 Textbee 호스트 세팅을 먼저 마치고, 대안은 한도가 신경 쓰일 때 다시 검토. 보고서: `~/workspace/research_notes/textbee-alternatives-sms-gateway-20261114-1106/report.md`.
+
+### 디자인 리뷰 + 수정 5건 (휴대폰 390px·태블릿 820px·데스크톱 1440px 실측)
+- 리뷰 결과 (로컬 dist 기준): 가로 넘침·글자 잘림·겹침·콘솔 오류 없음. 주요 1건 — 사진 반복(상품 4종이 사진 3장 공유, 갤러리 2행이 1행과 동일; 실사진 교체로 해결 예정). 사소 3건 — 수량 버튼·터치 영역·라이트박스 상단 겹침. 잡다 2건 — 관리자 URL 잘림·짧은 페이지 하단 여백.
+- 수정 완료 (로컬만): 수량 −/+ 버튼 44×44, 히어로 CTA·주문서 입력란·조회하기·저장 버튼·모바일 메뉴 행·라이트박스 버튼 전부 44px. 라이트박스 배경을 불투명한 어두운색으로 바꿔 "1/6"·닫기 버튼 뒤 글자 비침 제거. 관리자 주소 입력란 잘림 제거(URL·키 세로 배치). 배송 조회·관리자 푸터가 화면 하단에 붙도록 수정.
+- 검증: 빌드 성공, doctor fail 0, 검수 36/36·34/34·32/32·40/40 전부 통과, 터치 영역 실측 전부 44px, 라이트박스 수정 후 스크린샷 직접 확인.
+- 상태: 이번 dist 푸시와 함께 라이브 반영.
+
+### 배포 상태
+- `apps-script/Code.gs` 합친 기준본 — GitHub main 커밋 ddd7901 "Apps Script: 사진·상품·문자 알림·갤러리 합친 Code.gs (편집기 수술식 작업용 기준본)" — 2026-11-14 20:24. (편집기에는 OWNER_EMAIL·ADMIN_KEY 실제 값이 있으므로 GitHub에는 빈칸 자리 표시자 유지.)
+- 편집기 사진 코드 + 배포 1 v11·배포 2 v12 재배포 완료 (2026-11-14 20:22–20:24).
+- 상품·갤러리 편집기 추가 + 배포 1 v13·배포 2 v14 재배포 완료 (2026-11-14 20:39, ?action=photos·?action=products 확인).
+- 문자(SMS Gateway Cloud) 편집기 추가 + 배포 1 v15·배포 2 v16 재배포 완료 (2026-11-14 20:44, ?action=photos·?action=products 확인). 문자 코드 기준본 커밋 5bf75ee "Apps Script: 문자 알림을 Textbee에서 android-sms-gateway Cloud로 교체" (2026-11-14 20:31, 검수 45/45).
+- React dist 라이브 반영 (사진·상품·문자·갤러리·디자인 수정 포함) — 아래 커밋 참조.
+
 ## 2026-11-14 — 관리자 페이지 v2
 
 ### 새로 들어간 기능 (`admin.html`, `apps-script/Code.gs`)
