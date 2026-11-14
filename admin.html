@@ -11,7 +11,8 @@
     --ink:#241a12; --ink-soft:#463628; --muted:#6f6154; --line:#e9ddcd; --line-strong:#d9c6ae;
     --page:#fdf8f1; --surface:#fffdfa; --surface-alt:#f8efe3;
     --orange:#d9551f; --orange-dark:#b8430f; --orange-soft:#fdefe4;
-    --green:#3c6644; --green-soft:#edf3ea; --red:#a83a2a;
+    --green:#3c6644; --green-soft:#edf3ea; --red:#a83a2a; --red-soft:#fbe9e4;
+    --gold:#a87718; --gold-soft:#fdf0e0;
     --radius:16px;
     --serif:"Gowun Batang","Nanum Myeongjo","Noto Serif KR",serif;
     --sans:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
@@ -23,6 +24,7 @@
   header{background:#2a2018; color:#fdf6ec; padding:22px 0 18px}
   header h1{font-family:var(--serif); font-size:22px; margin:0}
   header p{margin:4px 0 0; font-size:13.5px; color:#cfbca9}
+  header .btn{margin-top:12px}
   .warn{margin:16px 0 0; background:#fff3e2; border:1px solid #e8cfa8; border-radius:12px; padding:12px 14px; font-size:13.5px}
   .warn b{color:var(--red)}
   main{padding:20px 0 60px}
@@ -30,47 +32,83 @@
   .card h2{font-family:var(--serif); font-size:18px; margin:0 0 6px}
   .card p{margin:0; font-size:14px; color:var(--muted)}
   label{display:block; font-size:13.5px; font-weight:700; margin-bottom:6px}
-  input[type="text"], input[type="search"], input[type="password"]{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:15px; background:#fff}
-  input:focus{outline:0; border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14)}
+  input[type="text"], input[type="search"], input[type="password"], select{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:15px; background:#fff}
+  input:focus, select:focus{outline:0; border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14)}
   .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
   .row .grow{flex:1; min-width:220px}
   .btn{display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 20px; border-radius:999px; border:1px solid transparent; font:inherit; font-weight:700; font-size:15px; cursor:pointer; text-decoration:none; background:var(--orange); color:#fff}
   .btn:hover{background:var(--orange-dark)}
   .btn--ghost{background:#fff; color:var(--ink); border-color:var(--line-strong)}
   .btn--ghost:hover{border-color:var(--orange); color:var(--orange-dark)}
+  .btn--green{background:var(--green); color:#fff}
+  .btn--green:hover{background:#2e5236}
+  .btn--danger{background:#fff; color:var(--red); border-color:#e3b8b0}
+  .btn--danger:hover{border-color:var(--red); background:var(--red-soft)}
   .btn--small{min-height:38px; padding:0 14px; font-size:14px}
+  .btn--mini{min-height:32px; padding:0 11px; font-size:13px; border-radius:999px}
   .btn[disabled]{opacity:.5; cursor:default}
   .stats{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:16px}
   @media (min-width:640px){ .stats{grid-template-columns:repeat(4,1fr)} }
   .stat{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px}
-  .stat b{display:block; font-size:26px; line-height:1.2}
+  .stat b{display:block; font-size:24px; line-height:1.25}
   .stat span{font-size:13px; color:var(--muted)}
+  .stat small{display:block; font-size:12.5px; color:var(--muted); margin-top:2px}
   .stat--alert b{color:var(--red)}
+  .chips{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 16px}
+  .chip{background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px}
+  .chip b{font-weight:800}
+  .chip span{color:var(--muted)}
+  .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px}
+  .toolbar .field{flex:1; min-width:150px}
+  .toolbar .field.wide{flex:2; min-width:200px}
+  .toolbar select{padding:10px 12px; font-size:14px}
+  .checkline{display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; min-height:44px; white-space:nowrap}
+  .checkline input{width:18px; height:18px; accent-color:var(--green)}
   .filters{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px}
   .filters button{min-height:40px; padding:0 16px; border-radius:999px; border:1px solid var(--line-strong); background:#fff; font:inherit; font-weight:700; font-size:14px; cursor:pointer}
   .filters button.on{background:var(--ink); color:#fff; border-color:var(--ink)}
-  .search{margin-bottom:14px}
+  .bulkbar{display:none; gap:8px; flex-wrap:wrap; align-items:center; background:var(--surface-alt); border:1px solid var(--line-strong); border-radius:12px; padding:10px 12px; margin-bottom:12px; font-size:14px; font-weight:700}
+  .bulkbar.show{display:flex}
+  .bulkbar .spacer{flex:1}
   .order{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:12px}
   .order.is-paid{border-color:#c8d8c8}
+  .order.selected{outline:2px solid var(--orange); outline-offset:-2px}
+  .order__top{display:flex; gap:12px; align-items:flex-start}
+  .order__check{margin-top:4px}
+  .order__check input{width:20px; height:20px; accent-color:var(--orange)}
+  .order__body{flex:1; min-width:0}
   .order__head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:baseline}
   .order__head h3{margin:0; font-size:16.5px}
-  .order__head time{font-size:13px; color:var(--muted)}
+  .order__head time{font-size:13px; color:var(--muted); white-space:nowrap}
   .order__amount{font-size:18px; font-weight:800}
   .order dl{display:grid; grid-template-columns:86px 1fr; gap:2px 10px; margin:12px 0; font-size:14px}
   .order dt{color:var(--muted)}
-  .order dd{margin:0}
+  .order dd{margin:0; overflow-wrap:anywhere}
+  .order dd a{color:var(--orange-dark); font-weight:700}
   .badge{display:inline-block; padding:2px 10px; border-radius:999px; font-size:12.5px; font-weight:700}
   .badge--unpaid{background:#fbe9e4; color:var(--red)}
   .badge--paid{background:var(--green-soft); color:var(--green)}
   .badge--notracking{background:#fdf0e0; color:#7a5a1c}
   .order__actions{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; border-top:1px solid var(--line); padding-top:14px}
   .order__actions .field{flex:1; min-width:180px}
+  .order__subactions{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; padding-top:12px; border-top:1px dashed var(--line)}
   .check{display:flex; align-items:center; gap:8px; font-weight:700; font-size:14.5px; min-height:44px}
   .check input{width:20px; height:20px; accent-color:var(--green)}
   .empty{text-align:center; color:var(--muted); padding:36px 0}
   .status{font-size:14px; color:var(--muted); min-height:22px}
   .status--error{color:var(--red)}
+  .status--ok{color:var(--green)}
   footer{border-top:1px solid var(--line); padding:20px 0 40px; font-size:13px; color:var(--muted)}
+  @media (max-width:640px){
+    .order__actions .js-save{flex:1 1 100%}
+  }
+  @media print{
+    header, #setupCard, .toolbar, .filters, .bulkbar, .order__actions, .order__subactions, footer, .warn, .order__check, .no-print{display:none !important}
+    body{background:#fff}
+    main{padding:0}
+    .order{break-inside:avoid; border:1px solid #999; margin-bottom:10px}
+    .stats{margin-bottom:12px}
+  }
 </style>
 </head>
 <body>
@@ -78,12 +116,12 @@
   <div class="wrap">
     <h1>효돈농원 관리자</h1>
     <p>주문 확인 · 입금 확인 · 송장번호 입력 — 이 페이지는 손님에게 공유하지 않습니다.</p>
-    <p style="margin-top:12px"><a class="btn btn--ghost" href="./">← 홈페이지로 돌아가기</a></p>
+    <a class="btn btn--ghost" href="./">← 홈페이지로 돌아가기</a>
   </div>
 </header>
 
 <main class="wrap">
-  <p class="warn"><b>주의:</b> 홈페이지 하단에도 작은 관리자 링크가 있습니다. 주소(<code>hyodon-farm/admin.html</code>)와 관리자 키를 손님에게 알려주지 마세요. 주문 목록은 관리자 키를 입력한 뒤에만 열립니다. 키는 Apps Script 편집기의 ADMIN_KEY와 같아야 합니다.</p>
+  <p class="warn"><b>주의:</b> 홈페이지 하단에도 작은 관리자 링크가 있습니다. 주소(<code>hyodon-farm/admin.html</code>)와 관리자 키를 손님에게 알려주지 마세요.</p>
 
   <section class="card" id="setupCard">
     <h2>연결 설정</h2>
@@ -93,13 +131,13 @@
         <label for="scriptUrl">Apps Script 웹앱 URL</label>
         <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
       </div>
-      <button class="btn" type="button" id="saveUrlBtn">저장하고 주문 불러오기</button>
-    </div>
-    <div class="row" style="margin-top:12px">
       <div class="grow">
         <label for="adminKey">관리자 키</label>
         <input type="password" id="adminKey" placeholder="Apps Script 편집기의 ADMIN_KEY와 같은 값" autocomplete="off">
       </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" type="button" id="saveUrlBtn" style="flex:1">저장하고 주문 불러오기</button>
     </div>
     <p class="status" id="keyStatus"></p>
     <p class="status" id="setupStatus"></p>
@@ -108,18 +146,49 @@
 
   <section id="board" hidden>
     <div class="stats" aria-label="주문 현황">
-      <div class="stat"><b id="statTotal">0</b><span>전체 주문</span></div>
-      <div class="stat stat--alert"><b id="statUnpaid">0</b><span>미입금</span></div>
-      <div class="stat stat--alert"><b id="statNoTracking">0</b><span>미출고 (송장번호 없음)</span></div>
-      <div class="stat"><b id="statToday">0</b><span>오늘 주문</span></div>
+      <div class="stat"><b id="statTotal">0</b><span>전체 주문</span><small id="statTotalAmount"></small></div>
+      <div class="stat"><b id="statToday">0</b><span>오늘 주문</span><small id="statTodayAmount"></small></div>
+      <div class="stat stat--alert"><b id="statUnpaid">0</b><span>미입금</span><small id="statUnpaidAmount"></small></div>
+      <div class="stat stat--alert"><b id="statNoTracking">0</b><span>미출고 (송장번호 없음)</span><small id="statNoTrackingNote"></small></div>
     </div>
+    <div class="chips" id="productChips"></div>
 
-    <div class="row" style="margin-bottom:12px">
-      <div class="grow search" style="margin:0">
-        <label for="searchInput">검색 (주문자·받는분·입금자명·전화번호)</label>
+    <div class="toolbar">
+      <div class="field wide">
+        <label for="searchInput">검색</label>
         <input type="search" id="searchInput" placeholder="예: 홍길동 또는 010-">
       </div>
-      <button class="btn btn--ghost" type="button" id="reloadBtn">새로고침</button>
+      <div class="field">
+        <label for="periodSelect">기간</label>
+        <select id="periodSelect">
+          <option value="all">전체 기간</option>
+          <option value="today">오늘</option>
+          <option value="week">최근 7일</option>
+          <option value="month">이번 달</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="productSelect">상품</label>
+        <select id="productSelect"><option value="all">전체 상품</option></select>
+      </div>
+      <div class="field">
+        <label for="sortSelect">정렬</label>
+        <select id="sortSelect">
+          <option value="new">최신순</option>
+          <option value="old">오래된순</option>
+          <option value="amountDesc">금액 높은순</option>
+          <option value="amountAsc">금액 낮은순</option>
+        </select>
+      </div>
+      <button class="btn btn--ghost btn--small" type="button" id="reloadBtn">새로고침</button>
+      <label class="checkline"><input type="checkbox" id="autoRefresh"> 자동 새로고침 (60초)</label>
+    </div>
+
+    <div class="toolbar">
+      <label class="checkline"><input type="checkbox" id="selectAll"> 전체 선택</label>
+      <button class="btn btn--ghost btn--small" type="button" id="csvBtn">CSV 내보내기</button>
+      <button class="btn btn--ghost btn--small" type="button" id="printBtn">출고 명단 인쇄</button>
+      <span class="status" id="toolStatus"></span>
     </div>
 
     <div class="filters" role="group" aria-label="주문 필터">
@@ -127,6 +196,14 @@
       <button type="button" data-filter="unpaid">미입금만</button>
       <button type="button" data-filter="notracking">미출고만</button>
       <button type="button" data-filter="paid">입금 완료</button>
+    </div>
+
+    <div class="bulkbar" id="bulkBar">
+      <span id="bulkCount">0건 선택됨</span>
+      <span class="spacer"></span>
+      <button class="btn btn--green btn--small" type="button" id="bulkPaidBtn">선택 입금확인</button>
+      <button class="btn btn--danger btn--small" type="button" id="bulkDeleteBtn">선택 삭제</button>
+      <button class="btn btn--ghost btn--small" type="button" id="bulkClearBtn">선택 해제</button>
     </div>
 
     <div id="orderList"></div>
@@ -146,13 +223,19 @@
   var LS_KEY_KEY = "hyodon-admin-key";
   var $ = function (s) { return document.querySelector(s); };
   var orders = [];
+  var selected = {};
   var filter = "all";
   var query = "";
+  var period = "all";
+  var productFilter = "all";
+  var sortMode = "new";
+  var autoTimer = null;
 
   var scriptUrlInput = $("#scriptUrl");
   var adminKeyInput = $("#adminKey");
   var setupStatus = $("#setupStatus");
   var listStatus = $("#listStatus");
+  var toolStatus = $("#toolStatus");
 
   function getUrl() {
     var v = (scriptUrlInput.value || "").trim() || localStorage.getItem(LS_KEY) || "";
@@ -165,65 +248,127 @@
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-  function todayStr() {
-    var d = new Date();
+  function todayStr(d) {
+    d = d || new Date();
     var m = String(d.getMonth() + 1).padStart(2, "0");
     var day = String(d.getDate()).padStart(2, "0");
     return d.getFullYear() + "-" + m + "-" + day;
   }
-
   function setStatus(el, msg, isError) {
     el.textContent = msg || "";
     el.classList.toggle("status--error", !!isError);
+    el.classList.toggle("status--ok", !isError && !!msg);
   }
+  function digits(s) { return String(s || "").replace(/[^0-9]/g, ""); }
 
+  /* ---------- 불러오기 ---------- */
   function loadOrders() {
     var url = getUrl();
-    if (!url) { setStatus(setupStatus, "Apps Script 웹앱 URL을 먼저 입력하세요. 배포 방법은 저장소의 apps-script/README.md를 보세요.", true); return; }
+    if (!url) { setStatus(setupStatus, "Apps Script 웹앱 URL을 먼저 입력하세요.", true); return; }
     var key = getKey();
     if (!key) { setStatus(listStatus, "관리자 키를 입력하세요.", true); return; }
     setStatus(listStatus, "주문을 불러오는 중입니다…");
     fetch(url + "?action=list&key=" + encodeURIComponent(key))
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (!data || !data.ok) throw new Error((data && data.error) || "목록을 불러오지 못했습니다. 본인 계정으로 로그인했는지 확인하세요.");
+        if (!data || !data.ok) throw new Error((data && data.error) || "목록을 불러오지 못했습니다.");
         orders = data.orders || [];
+        selected = {};
         $("#board").hidden = false;
         render();
         setStatus(listStatus, "최근 주문 " + orders.length + "건을 불러왔습니다. " + new Date().toLocaleString("ko-KR"));
+        setStatus(setupStatus, "", false);
       })
       .catch(function (err) {
-        $("#board").hidden = true;
         setStatus(listStatus, "불러오기 실패: " + err.message, true);
         setStatus(setupStatus, "실패했습니다. 관리자 키가 Apps Script 편집기의 ADMIN_KEY와 같은지, 웹앱 주소가 관리자용 배포 주소인지 확인하세요.", true);
       });
   }
 
-  function renderStats() {
-    var today = todayStr();
-    var unpaid = orders.filter(function (o) { return !o.paid; }).length;
-    var noTracking = orders.filter(function (o) { return !(o.tracking || "").trim(); }).length;
-    var todayCount = orders.filter(function (o) { return String(o.datetime || "").indexOf(today) === 0; }).length;
-    $("#statTotal").textContent = orders.length;
-    $("#statUnpaid").textContent = unpaid;
-    $("#statNoTracking").textContent = noTracking;
-    $("#statToday").textContent = todayCount;
+  /* ---------- 필터·정렬 ---------- */
+  function inPeriod(o) {
+    if (period === "all") return true;
+    var date = String(o.datetime || "").slice(0, 10);
+    if (!date) return false;
+    if (period === "today") return date === todayStr();
+    var d = new Date(date + "T00:00:00");
+    var now = new Date();
+    if (period === "week") {
+      var diff = (now - d) / 86400000;
+      return diff >= 0 && diff < 7;
+    }
+    if (period === "month") return date.slice(0, 7) === todayStr().slice(0, 7);
+    return true;
   }
-
-  function render() {
-    renderStats();
+  function filteredOrders() {
     var q = query.trim();
     var list = orders.filter(function (o) {
       if (filter === "unpaid" && o.paid) return false;
       if (filter === "paid" && !o.paid) return false;
       if (filter === "notracking" && (o.tracking || "").trim()) return false;
+      if (!inPeriod(o)) return false;
+      if (productFilter !== "all" && o.product !== productFilter) return false;
       if (q) {
         var hay = [o.orderer, o.ordererPhone, o.receiver, o.receiverPhone, o.depositor, o.product].join(" ");
         if (hay.indexOf(q) === -1) return false;
       }
       return true;
     });
+    list.sort(function (a, b) {
+      if (sortMode === "old") return String(a.datetime).localeCompare(String(b.datetime));
+      if (sortMode === "amountDesc") return (b.amount || 0) - (a.amount || 0);
+      if (sortMode === "amountAsc") return (a.amount || 0) - (b.amount || 0);
+      return String(b.datetime).localeCompare(String(a.datetime));
+    });
+    return list;
+  }
+
+  /* ---------- 대시보드 ---------- */
+  function renderStats() {
+    var today = todayStr();
+    var totalAmount = 0, todayCount = 0, todayAmount = 0, unpaidCount = 0, unpaidAmount = 0, noTrack = 0;
+    var byProduct = {};
+    orders.forEach(function (o) {
+      totalAmount += o.amount || 0;
+      if (String(o.datetime || "").indexOf(today) === 0) { todayCount++; todayAmount += o.amount || 0; }
+      if (!o.paid) { unpaidCount++; unpaidAmount += o.amount || 0; }
+      if (!(o.tracking || "").trim()) noTrack++;
+      var p = o.product || "기타";
+      byProduct[p] = byProduct[p] || { count: 0, amount: 0 };
+      byProduct[p].count++;
+      byProduct[p].amount += o.amount || 0;
+    });
+    $("#statTotal").textContent = orders.length;
+    $("#statTotalAmount").textContent = "매출 " + won(totalAmount);
+    $("#statToday").textContent = todayCount;
+    $("#statTodayAmount").textContent = "매출 " + won(todayAmount);
+    $("#statUnpaid").textContent = unpaidCount;
+    $("#statUnpaidAmount").textContent = won(unpaidAmount) + " 받을 돈";
+    $("#statNoTracking").textContent = noTrack;
+    $("#statNoTrackingNote").textContent = "송장번호를 넣으면 출고 완료";
+    var chips = Object.keys(byProduct).sort(function (a, b) { return byProduct[b].amount - byProduct[a].amount; }).map(function (p) {
+      return '<span class="chip"><b>' + esc(p) + '</b> <span>' + byProduct[p].count + '건 · ' + won(byProduct[p].amount) + '</span></span>';
+    }).join("");
+    $("#productChips").innerHTML = chips;
+    var sel = $("#productSelect");
+    var current = sel.value || "all";
+    var opts = '<option value="all">전체 상품</option>' + Object.keys(byProduct).sort().map(function (p) {
+      return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+    }).join("");
+    sel.innerHTML = opts;
+    sel.value = (current === "all" || byProduct[current]) ? current : "all";
+    productFilter = sel.value;
+  }
+
+  /* ---------- 렌더 ---------- */
+  function render() {
+    renderStats();
+    var list = filteredOrders();
     var box = $("#orderList");
+    var selCount = Object.keys(selected).filter(function (r) { return selected[r]; }).length;
+    $("#bulkBar").classList.toggle("show", selCount > 0);
+    $("#bulkCount").textContent = selCount + "건 선택됨";
+    $("#selectAll").checked = list.length > 0 && list.every(function (o) { return selected[o.row]; });
     if (!list.length) {
       box.innerHTML = '<p class="empty">해당 주문이 없습니다.</p>';
       return;
@@ -235,41 +380,58 @@
       var trackBadge = (o.tracking || "").trim()
         ? '<span class="badge badge--paid">출고됨</span>'
         : '<span class="badge badge--notracking">미출고</span>';
+      var recvPhone = digits(o.receiverPhone);
+      var ordPhone = digits(o.ordererPhone);
       return '' +
-        '<article class="order' + (o.paid ? ' is-paid' : '') + '" data-row="' + o.row + '">' +
-          '<div class="order__head"><h3>' + esc(o.receiver || "") + ' — ' + esc(o.product || "") + '</h3><time>' + esc(o.datetime || "") + '</time></div>' +
-          '<div style="margin-top:8px">' + paidBadge + ' ' + trackBadge + ' <span class="order__amount">' + won(o.amount) + '</span></div>' +
-          '<dl>' +
-            '<dt>수량</dt><dd>' + esc(o.qty) + '박스</dd>' +
-            '<dt>입금자명</dt><dd>' + esc(o.depositor || "") + '</dd>' +
-            '<dt>주문자</dt><dd>' + esc(o.orderer || "") + ' · ' + esc(o.ordererPhone || "") + '</dd>' +
-            '<dt>받는분</dt><dd>' + esc(o.receiver || "") + ' · ' + esc(o.receiverPhone || "") + '</dd>' +
-            '<dt>주소</dt><dd>' + esc(o.receiverAddress || "") + '</dd>' +
-            '<dt>요청사항</dt><dd>' + esc(o.memo || "없음") + '</dd>' +
-          '</dl>' +
-          '<div class="order__actions">' +
-            '<label class="check"><input type="checkbox" class="js-paid" ' + (o.paid ? 'checked' : '') + '> 입금 확인</label>' +
-            '<div class="field"><label>송장번호 (로젠택배)</label><input type="text" class="js-tracking" value="' + esc(o.tracking || "") + '" placeholder="송장번호 입력"></div>' +
-            '<button type="button" class="btn btn--small js-save">저장</button>' +
+        '<article class="order' + (o.paid ? ' is-paid' : '') + (selected[o.row] ? ' selected' : '') + '" data-row="' + o.row + '">' +
+          '<div class="order__top">' +
+            '<label class="order__check"><input type="checkbox" class="js-select" ' + (selected[o.row] ? 'checked' : '') + ' aria-label="선택"></label>' +
+            '<div class="order__body">' +
+              '<div class="order__head"><h3>' + esc(o.receiver || "") + ' — ' + esc(o.product || "") + '</h3><time>' + esc(o.datetime || "") + '</time></div>' +
+              '<div style="margin-top:8px">' + paidBadge + ' ' + trackBadge + ' <span class="order__amount">' + won(o.amount) + '</span></div>' +
+              '<dl>' +
+                '<dt>수량</dt><dd>' + esc(o.qty) + '박스</dd>' +
+                '<dt>입금자명</dt><dd>' + esc(o.depositor || "") + '</dd>' +
+                '<dt>주문자</dt><dd>' + esc(o.orderer || "") + (ordPhone ? ' · <a href="tel:' + ordPhone + '">' + esc(o.ordererPhone) + '</a>' : ' · ' + esc(o.ordererPhone || "")) + '</dd>' +
+                '<dt>받는분</dt><dd>' + esc(o.receiver || "") + (recvPhone ? ' · <a href="tel:' + recvPhone + '">' + esc(o.receiverPhone) + '</a>' : ' · ' + esc(o.receiverPhone || "")) + '</dd>' +
+                '<dt>주소</dt><dd>' + esc(o.receiverAddress || "") + '</dd>' +
+                '<dt>요청사항</dt><dd>' + esc(o.memo || "없음") + '</dd>' +
+              '</dl>' +
+              '<div class="order__actions">' +
+                '<label class="check"><input type="checkbox" class="js-paid" ' + (o.paid ? 'checked' : '') + '> 입금 확인</label>' +
+                '<div class="field"><label>송장번호 (로젠택배)</label><input type="text" class="js-tracking" value="' + esc(o.tracking || "") + '" placeholder="송장번호 입력"></div>' +
+                '<button type="button" class="btn btn--small js-save">저장</button>' +
+              '</div>' +
+              '<div class="order__subactions">' +
+                '<button type="button" class="btn btn--ghost btn--mini js-copy-summary">주문요약 복사</button>' +
+                '<button type="button" class="btn btn--ghost btn--mini js-copy-address">주소 복사</button>' +
+                (recvPhone ? '<a class="btn btn--ghost btn--mini" href="sms:' + recvPhone + '&body=' + encodeURIComponent('[효돈농원] ' + (o.receiver || '') + '님, 주문하신 ' + (o.product || '') + ' ' + o.qty + '박스가 로젠택배로 출고되었습니다. 송장번호는 입금 확인 후 안내드립니다.') + '">배송문자 보내기</a>' : '') +
+                '<button type="button" class="btn btn--danger btn--mini js-delete">주문 삭제</button>' +
+              '</div>' +
+            '</div>' +
           '</div>' +
         '</article>';
     }).join("");
   }
 
+  /* ---------- 저장·삭제 ---------- */
+  function postAdmin(body) {
+    return fetch(getUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+  }
   function saveOrder(card) {
     var url = getUrl();
+    if (!url || !getKey()) { setStatus(listStatus, "웹앱 URL과 관리자 키를 먼저 입력하세요.", true); return; }
     var row = Number(card.getAttribute("data-row"));
     var paid = card.querySelector(".js-paid").checked;
     var tracking = (card.querySelector(".js-tracking").value || "").trim();
     var btn = card.querySelector(".js-save");
     btn.disabled = true;
     btn.textContent = "저장 중…";
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "update", row: row, paid: paid, tracking: tracking, key: getKey() })
-    })
-      .then(function (r) { return r.json(); })
+    postAdmin({ action: "update", row: row, paid: paid, tracking: tracking, key: getKey() })
       .then(function (data) {
         if (!data || !data.ok) throw new Error((data && data.error) || "저장에 실패했습니다.");
         var o = orders.filter(function (x) { return x.row === row; })[0];
@@ -280,7 +442,143 @@
       .catch(function (err) { setStatus(listStatus, "저장 실패: " + err.message, true); })
       .finally(function () { btn.disabled = false; btn.textContent = "저장"; });
   }
+  function deleteOrder(card) {
+    var row = Number(card.getAttribute("data-row"));
+    var o = orders.filter(function (x) { return x.row === row; })[0];
+    var label = o ? (o.receiver + " — " + o.product + " (" + won(o.amount) + ")") : (row + "행");
+    if (!window.confirm("정말 삭제할까요?\n" + label + "\n시트에서도 행이 사라집니다.")) return;
+    postAdmin({ action: "delete", row: row, key: getKey() })
+      .then(function (data) {
+        if (!data || !data.ok) throw new Error((data && data.error) || "삭제에 실패했습니다.");
+        selected = {};
+        setStatus(listStatus, "삭제했습니다. " + label + " 목록을 다시 불러옵니다.");
+        loadOrders();
+      })
+      .catch(function (err) { setStatus(listStatus, "삭제 실패: " + err.message, true); });
+  }
+  function bulkPaid() {
+    var rows = Object.keys(selected).filter(function (r) { return selected[r]; }).map(Number);
+    if (!rows.length) return;
+    var updates = rows.map(function (r) {
+      var o = orders.filter(function (x) { return x.row === r; })[0] || {};
+      return { row: r, paid: true, tracking: o.tracking || "" };
+    });
+    postAdmin({ action: "updateBatch", updates: updates, key: getKey() })
+      .then(function (data) {
+        if (!data || !data.ok) throw new Error((data && data.error) || "일괄 저장에 실패했습니다.");
+        rows.forEach(function (r) {
+          var o = orders.filter(function (x) { return x.row === r; })[0];
+          if (o) o.paid = true;
+        });
+        selected = {};
+        render();
+        setStatus(listStatus, rows.length + "건 입금확인 처리했습니다.");
+      })
+      .catch(function (err) { setStatus(listStatus, "일괄 저장 실패: " + err.message, true); });
+  }
+  function bulkDelete() {
+    var rows = Object.keys(selected).filter(function (r) { return selected[r]; }).map(Number).sort(function (a, b) { return b - a; });
+    if (!rows.length) return;
+    if (!window.confirm(rows.length + "건을 정말 삭제할까요?\n시트에서도 행이 사라집니다.")) return;
+    var chain = Promise.resolve();
+    rows.forEach(function (r) {
+      chain = chain.then(function () {
+        return postAdmin({ action: "delete", row: r, key: getKey() });
+      }).then(function (data) {
+        if (!data || !data.ok) throw new Error((data && data.error) || "삭제에 실패했습니다.");
+        orders = orders.filter(function (x) { return x.row !== r; });
+        delete selected[r];
+      });
+    });
+    chain.then(function () {
+      selected = {};
+      setStatus(listStatus, rows.length + "건을 삭제했습니다. 목록을 다시 불러옵니다.");
+      loadOrders();
+    }).catch(function (err) {
+      selected = {};
+      loadOrders();
+      setStatus(listStatus, "일괄 삭제 중 실패: " + err.message + " (삭제된 건은 목록에서 빠집니다. 확인하세요.)", true);
+    });
+  }
 
+  /* ---------- 복사·CSV·인쇄 ---------- */
+  function copyText(text, okMsg) {
+    function done() { setStatus(toolStatus, okMsg); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+    } else { fallbackCopy(text); done(); }
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  function orderSummary(o) {
+    return '[효돈농원 주문]\n' +
+      '받는분: ' + (o.receiver || '') + ' ' + (o.receiverPhone || '') + '\n' +
+      '주소: ' + (o.receiverAddress || '') + '\n' +
+      '상품: ' + (o.product || '') + ' ' + o.qty + '박스\n' +
+      '금액: ' + won(o.amount) + ' / 입금자명: ' + (o.depositor || '') + '\n' +
+      '주문일시: ' + (o.datetime || '') + '\n' +
+      '요청사항: ' + (o.memo || '없음');
+  }
+  function exportCSV() {
+    var list = filteredOrders();
+    if (!list.length) { setStatus(toolStatus, "내보낼 주문이 없습니다.", true); return; }
+    var head = ['주문일시', '상품명', '수량', '총금액', '입금자명', '주문자', '주문자연락처', '받는분', '받는분연락처', '받는분주소', '요청사항', '입금확인', '송장번호'];
+    function cell(v, isNum) {
+      if (isNum) return String(v == null ? '' : v);
+      var s = String(v == null ? '' : v);
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    var lines = [head.map(function (h) { return '"' + h + '"'; }).join(',')];
+    list.forEach(function (o) {
+      lines.push([
+        cell(o.datetime), cell(o.product), cell(o.qty, true), cell(o.amount, true),
+        cell(o.depositor), cell(o.orderer), cell(o.ordererPhone), cell(o.receiver),
+        cell(o.receiverPhone), cell(o.receiverAddress), cell(o.memo),
+        cell(o.paid ? '확인' : ''), cell(o.tracking)
+      ].join(','));
+    });
+    var blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "hyodon-orders-" + todayStr() + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setStatus(toolStatus, list.length + "건을 CSV로 내보냈습니다.");
+  }
+
+  /* ---------- 자동 새로고침 ---------- */
+  function hasUnsavedEdits() {
+    if (document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA" || document.activeElement.tagName === "SELECT")) return true;
+    var inputs = document.querySelectorAll(".js-tracking");
+    for (var i = 0; i < inputs.length; i++) {
+      var card = inputs[i].closest(".order");
+      if (!card) continue;
+      var row = Number(card.getAttribute("data-row"));
+      var o = orders.filter(function (x) { return x.row === row; })[0];
+      if (o && (inputs[i].value || "").trim() !== (o.tracking || "").trim()) return true;
+      var paid = card.querySelector(".js-paid");
+      if (paid && o && paid.checked !== !!o.paid) return true;
+    }
+    return false;
+  }
+  function setAutoRefresh(on) {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    if (on) {
+      autoTimer = setInterval(function () {
+        if (!hasUnsavedEdits()) loadOrders();
+      }, 60000);
+    }
+  }
+
+  /* ---------- 이벤트 ---------- */
   $("#saveUrlBtn").addEventListener("click", function () {
     var url = (scriptUrlInput.value || "").trim();
     var key = (adminKeyInput.value || "").trim();
@@ -293,6 +591,20 @@
   });
   $("#reloadBtn").addEventListener("click", loadOrders);
   $("#searchInput").addEventListener("input", function (e) { query = e.target.value || ""; render(); });
+  $("#periodSelect").addEventListener("change", function (e) { period = e.target.value; render(); });
+  $("#productSelect").addEventListener("change", function (e) { productFilter = e.target.value; render(); });
+  $("#sortSelect").addEventListener("change", function (e) { sortMode = e.target.value; render(); });
+  $("#autoRefresh").addEventListener("change", function (e) { setAutoRefresh(e.target.checked); });
+  $("#csvBtn").addEventListener("click", exportCSV);
+  $("#printBtn").addEventListener("click", function () { window.print(); });
+  $("#bulkPaidBtn").addEventListener("click", bulkPaid);
+  $("#bulkDeleteBtn").addEventListener("click", bulkDelete);
+  $("#bulkClearBtn").addEventListener("click", function () { selected = {}; render(); });
+  $("#selectAll").addEventListener("change", function (e) {
+    var list = filteredOrders();
+    list.forEach(function (o) { selected[o.row] = e.target.checked; });
+    render();
+  });
   document.querySelectorAll(".filters button").forEach(function (b) {
     b.addEventListener("click", function () {
       document.querySelectorAll(".filters button").forEach(function (x) { x.classList.remove("on"); });
@@ -302,9 +614,29 @@
     });
   });
   $("#orderList").addEventListener("click", function (e) {
-    if (e.target && e.target.classList.contains("js-save")) {
-      var card = e.target.closest(".order");
-      if (card) saveOrder(card);
+    var t = e.target;
+    if (!t) return;
+    var card = t.closest(".order");
+    if (!card) return;
+    var row = Number(card.getAttribute("data-row"));
+    var o = orders.filter(function (x) { return x.row === row; })[0];
+    if (t.classList.contains("js-save")) { saveOrder(card); return; }
+    if (t.classList.contains("js-delete")) { deleteOrder(card); return; }
+    if (t.classList.contains("js-copy-summary") && o) { copyText(orderSummary(o), "주문요약을 복사했습니다."); return; }
+    if (t.classList.contains("js-copy-address") && o) {
+      copyText((o.receiver || "") + " " + (o.receiverPhone || "") + " / " + (o.receiverAddress || ""), "주소를 복사했습니다.");
+      return;
+    }
+  });
+  $("#orderList").addEventListener("change", function (e) {
+    var t = e.target;
+    if (!t) return;
+    var card = t.closest(".order");
+    if (!card) return;
+    var row = Number(card.getAttribute("data-row"));
+    if (t.classList.contains("js-select")) {
+      if (t.checked) selected[row] = true; else delete selected[row];
+      render();
     }
   });
 
