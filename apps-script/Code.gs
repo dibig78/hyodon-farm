@@ -10,6 +10,10 @@
  *      관리자 기능은 관리자 키(ADMIN_KEY) 또는 OWNER_EMAIL과 같은 Google 계정으로
  *      로그인했을 때 동작합니다. 관리자 페이지는 fetch로 불러오기 때문에
  *      Google 계정 로그인 방식이 브라우저에서 막힐 수 있어, 키 방식을 씁니다.
+ *   5) 홈페이지 사진 관리: 사진설정 탭 + Drive "효돈농원 홈페이지 사진" 폴더.
+ *      홈페이지가 ?action=photos 로 슬롯별 URL을 읽고, 관리자가
+ *      action=uploadPhoto / deletePhoto 로 사진을 바꾸거나 되돌립니다.
+ *      아래 '홈페이지 사진 관리' 절을 보세요.
  *
  * 설치 방법은 같은 저장소의 apps-script/README.md 를 보세요.
  * ------------------------------------------------------------
@@ -68,6 +72,12 @@ function doPost(e) {
     if (data.action === 'update') return adminUpdate(data);
     if (data.action === 'updateBatch') return adminUpdateBatch(data);
     if (data.action === 'delete') return adminDelete(data);
+
+    // 홈페이지 사진 관리 (admin.html 사진 관리에서 보낸 요청)
+    // body의 key는 관리자 키(기존 checkAdmin과 같은 규칙)이고,
+    // 사진 슬롯은 slot 필드로 받습니다. (key를 슬롯으로 쓰면 키 확인과 겹칩니다)
+    if (data.action === 'uploadPhoto') return uploadPhoto(data);
+    if (data.action === 'deletePhoto') return deletePhoto(data);
 
     // 필수값 확인 (홈페이지에서도 검사하지만 마지막으로 한 번 더)
     var missing = [];
@@ -134,6 +144,8 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'list') return adminList(e.parameter.key);
   // 손님용 배송 조회 (track.html에서 ?action=track&phone=... 로 호출, 키 없음)
   if (e && e.parameter && e.parameter.action === 'track') return trackGet(e.parameter.phone);
+  // 홈페이지 사진 설정 조회 (index.html에서 ?action=photos 로 호출, 키 없음)
+  if (e && e.parameter && e.parameter.action === 'photos') return photosGet();
   var status = 'ok';
   var message = '효돈농원 주문 접수 서비스가 동작 중입니다.';
   try {
@@ -285,6 +297,159 @@ function adminUpdate(data) {
       lock.releaseLock();
     }
     return respond({ ok: true, row: row });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/* ============================================================
+ *  홈페이지 사진 관리 (사진설정 탭 + Google Drive)
+ *  - 관리자가 admin.html '사진 관리'에서 사진을 올리면, Drive
+ *    "효돈농원 홈페이지 사진" 폴더에 저장하고 "링크가 있는 모든
+ *    사용자"가 볼 수 있게 공유한 뒤, 사진설정 탭에 슬롯별 URL을
+ *    저장합니다. 홈페이지(index.html)는 배포 1 ?action=photos 로
+ *    읽어 URL이 있는 슬롯의 사진만 교체합니다.
+ *  - 사진 업로드·삭제는 관리자 전용(checkAdmin)입니다.
+ *    body의 key는 관리자 키, slot이 사진 슬롯입니다.
+ *  - 행만 지우면 기본 번들 이미지로 돌아갑니다. Drive 파일은
+ *    폴더에 그대로 남으니, 필요하면 Drive에서 직접 지우세요.
+ * ============================================================ */
+/** 사진설정 탭 이름 (열: key, driveFileId, url, updatedAt) */
+var PHOTOS_SHEET_NAME = '사진설정';
+var PHOTOS_HEADERS = ['key', 'driveFileId', 'url', 'updatedAt'];
+/** 사진을 모아둘 Drive 폴더 이름 */
+var PHOTO_FOLDER_NAME = '효돈농원 홈페이지 사진';
+/** 파일 크기 상한 (브라우저 축소 후 기준) */
+var PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+/** 사진 슬롯 키 — hero, 상품 4종 (홈페이지·관리자 양쪽과 같은 순서) */
+var PHOTO_KEYS = ['hero', 'product-home', 'product-gift', 'product-mixed', 'product-golden-gift'];
+
+/** 사진설정 탭을 가져옵니다. 없으면 헤더와 함께 만듭니다. */
+function getPhotosSheet() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(PHOTOS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(PHOTOS_SHEET_NAME);
+    sheet.getRange(1, 1, 1, PHOTOS_HEADERS.length).setValues([PHOTOS_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** 슬롯별 사진 URL (공개 읽기, 키 없음) — 탭이 없어도 빈 객체를 돌려줍니다. */
+function photosGet() {
+  try {
+    var photos = {};
+    var sheet = getPhotosSheet();
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var values = sheet.getRange(2, 1, lastRow - 1, 3).getDisplayValues();
+      for (var i = 0; i < values.length; i++) {
+        var key = String(values[i][0] || '').trim();
+        var url = String(values[i][2] || '').trim();
+        if (key && url) photos[key] = url;
+      }
+    }
+    return respond({ ok: true, photos: photos });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** Drive "효돈농원 홈페이지 사진" 폴더를 찾거나 만듭니다. */
+function getPhotoFolder() {
+  var folders = DriveApp.getFoldersByName(PHOTO_FOLDER_NAME);
+  if (folders.hasNext()) return folders.next();
+  return DriveApp.createFolder(PHOTO_FOLDER_NAME);
+}
+
+/** 사진설정 탭에 슬롯 한 줄을 새로 넣거나 갈아 끼웁니다. */
+function upsertPhoto(slot, fileId, url) {
+  var sheet = getPhotosSheet();
+  var lastRow = sheet.getLastRow();
+  var stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  if (lastRow >= 2) {
+    var keys = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+    for (var i = 0; i < keys.length; i++) {
+      if (String(keys[i][0] || '').trim() === slot) {
+        sheet.getRange(i + 2, 2, 1, 3).setValues([[fileId, url, stamp]]);
+        return;
+      }
+    }
+  }
+  sheet.appendRow([slot, fileId, url, stamp]);
+}
+
+/**
+ * 사진 업로드 (관리자 전용)
+ * body: { action: 'uploadPhoto', key: 관리자 키, slot: 사진 슬롯,
+ *         filename, mimeType, base64 }
+ * base64는 브라우저에서 1600px·JPEG 0.85로 줄인 뒤 보낸 값입니다.
+ * 5MB(축소 후 기준)를 넘으면 에러를 돌려줍니다.
+ */
+function uploadPhoto(data) {
+  try {
+    checkAdmin(data && data.key);
+    var slot = String((data && data.slot) || '').trim();
+    if (PHOTO_KEYS.indexOf(slot) < 0) {
+      return respond({ ok: false, error: '알 수 없는 사진 슬롯입니다: ' + slot });
+    }
+    var b64 = String((data && data.base64) || '').replace(/^data:[^,]*,/, '').replace(/\s/g, '');
+    if (!b64) return respond({ ok: false, error: '이미지 데이터가 없습니다.' });
+    var bytes = Utilities.base64Decode(b64);
+    if (bytes.length > PHOTO_MAX_BYTES) {
+      return respond({ ok: false, error: '파일이 너무 큽니다. 5MB 이하로 줄여 다시 올려주세요.' });
+    }
+    var mimeType = String((data && data.mimeType) || 'image/jpeg');
+    if (mimeType.indexOf('image/') !== 0) {
+      return respond({ ok: false, error: '이미지 파일만 올릴 수 있습니다.' });
+    }
+    var filename = String((data && data.filename) || (slot + '.jpg')).replace(/[\\/:*?"<>|]/g, '_');
+    if (!filename) filename = slot + '.jpg';
+    var blob = Utilities.newBlob(bytes, mimeType, filename);
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    var fileId, url;
+    try {
+      var folder = getPhotoFolder();
+      var file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      fileId = file.getId();
+      url = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
+      upsertPhoto(slot, fileId, url);
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, slot: slot, url: url, fileId: fileId });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 사진 삭제 (관리자 전용) — 사진설정 탭에서 해당 슬롯 행을 지워
+ * 기본 번들 이미지로 되돌립니다. Drive 파일은 폴더에 남습니다.
+ * body: { action: 'deletePhoto', key: 관리자 키, slot: 사진 슬롯 }
+ */
+function deletePhoto(data) {
+  try {
+    checkAdmin(data && data.key);
+    var slot = String((data && data.slot) || '').trim();
+    if (PHOTO_KEYS.indexOf(slot) < 0) {
+      return respond({ ok: false, error: '알 수 없는 사진 슬롯입니다: ' + slot });
+    }
+    var sheet = getPhotosSheet();
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var keys = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+      for (var i = 0; i < keys.length; i++) {
+        if (String(keys[i][0] || '').trim() === slot) {
+          sheet.deleteRow(i + 2);
+          return respond({ ok: true, slot: slot });
+        }
+      }
+    }
+    return respond({ ok: true, slot: slot });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
