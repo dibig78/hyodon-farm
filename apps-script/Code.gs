@@ -21,6 +21,12 @@
  *      아래 '상품 관리' 절을 보세요.
  *   7) 새 주문 문자 알림 (SMS Gateway for Android, 클라우드 모드): 주문이 접수되면 농원 전화번호로 문자 1건.
  *      계정이 비어 있으면 건너뜁니다. 아래 '문자 알림' 절을 보세요.
+ *   8) 홍보 문자 발송 (SMS Gateway for Android, 클라우드 모드): 관리자가
+ *      직접 입력한 번호들로 홍보 문자를 보냅니다. 대량 발송은 즉시
+ *      보내지 않고 '문자발송큐' 탭에 예약한 뒤, 15분마다 트리거가
+ *      4건씩 60초 간격으로 천천히 보냅니다. 하루 최대 100건(성공
+ *      건수 기준). 1건 테스트 발송만 즉시 보냅니다. 발송 기록은
+ *      '문자발송기록' 탭에 남습니다. 아래 '홍보 문자 발송' 절을 보세요.
  *
  * 설치 방법은 같은 저장소의 apps-script/README.md 를 보세요.
  * ------------------------------------------------------------
@@ -52,7 +58,7 @@ var SMSGATE_USERNAME = '';
 var SMSGATE_PASSWORD = '';
 
 /** 새 주문 알림 문자를 받을 농원 전화번호 (편집기에서 바꾸면 됩니다). */
-var NOTIFY_PHONE = '010-2696-1326';
+var NOTIFY_PHONE = '010-2604-7402';
 
 /**
  * 관리자 전용 기능(주문 목록·입금확인·송장번호)을 쓸 본인 Gmail 주소.
@@ -101,6 +107,12 @@ function doPost(e) {
 
     // 새 주문 문자 알림 테스트 (admin.html에서 호출, 계정 확인은 testSmsGate 안에서)
     if (data.action === 'testSmsGate') return testSmsGate(data);
+
+    // 홍보 문자 예약·테스트·현황·트리거 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'reservePromo') return reservePromo(data);
+    if (data.action === 'sendPromoTest') return sendPromoTest(data);
+    if (data.action === 'getPromoStatus') return getPromoStatus(data);
+    if (data.action === 'setupPromoTrigger') return setupPromoTrigger(data);
 
     // 상품 관리 (admin.html 상품 관리에서 보낸 요청)
     if (data.action === 'upsertProduct') return upsertProduct(data);
@@ -844,6 +856,9 @@ function sendSmsViaSmsGate_(phone, message) {
  *   [효돈농원] 새 주문: 노지감귤 가정용 10kg 1박스 21,000원,
  *   테스트E 010-7777-9999 (입금자명: 테스트E)
  * 실패해도 주문 접수는 절대 막지 않습니다 (내부 try/catch + 계정 없음 시 skip).
+ * 보낸 결과는 '문자발송기록' 탭에 구분 '주문알림'으로 남겨 관리자 페이지의
+ * 문자 전송 모니터링에 표시합니다. 구분이 '주문알림'이라 홍보 하루 한도
+ * (100건) 계산(countTodaySent_은 '홍보'만 합산)에는 들어가지 않습니다.
  */
 function notifyNewOrder_(data, productText) {
   try {
@@ -852,7 +867,16 @@ function notifyNewOrder_(data, productText) {
     var message = '[효돈농원] 새 주문: ' + productText + ' ' + amount + '원, ' +
       data.ordererName + ' ' + data.ordererPhone +
       ' (입금자명: ' + data.depositor + ')';
-    sendSmsViaSmsGate_(NOTIFY_PHONE, message);
+    var ok = false;
+    try { ok = sendSmsViaSmsGate_(NOTIFY_PHONE, message); } catch (e) { ok = false; }
+    // 주문 알림도 '문자발송기록' 탭에 남깁니다 (구분 '주문알림').
+    // 기록 쓰기가 실패해도 주문 접수와 문자 발송 결과에는 영향이 없습니다.
+    try {
+      var logSheet = getSmsLogSheet_();
+      logPromoSend_(logSheet, '주문알림', message, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [NOTIFY_PHONE]);
+    } catch (logErr) {
+      Logger.log('notifyNewOrder_ log failed: ' + logErr);
+    }
   } catch (err) {
     // 문자 실패가 주문 접수를 막지 않게 합니다.
     Logger.log('notifyNewOrder_ failed: ' + err);
@@ -873,6 +897,456 @@ function testSmsGate(data) {
     var ok = sendSmsViaSmsGate_(NOTIFY_PHONE, '[효돈농원] 문자 알림 테스트입니다.');
     if (ok) return respond({ ok: true });
     return respond({ ok: false, error: '문자 발송에 실패했습니다. SMS Gateway 앱이 켜져 있고 Cloud Server에 연결됐는지 확인하세요.' });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/* ============================================================
+ *  홍보 문자 발송 (SMS Gateway for Android, 클라우드 모드)
+ *  - 대량 발송은 즉시 보내지 않습니다. 관리자가 예약하면 '문자발송큐'
+ *    탭에 상태 '대기'로 한 행씩 저장하고, 15분마다 실행되는 시간
+ *    트리거(processPromoQueue_)가 4건씩 60초 간격으로 천천히 보냅니다.
+ *    4건이면 약 250초라 6분 실행 제한 안에 듭니다.
+ *  - 하루 상한 100건(성공 건수 기준)은 '문자발송기록' 탭에서 오늘(KST)
+ *    성공 합산으로 계산하고, 남은 한도까지만 보냅니다.
+ *  - 즉시 발송은 1건 테스트 발송(sendPromoTest)만 합니다.
+ *    홍보 문자 대량 즉시 발송 액션(sendPromo)은 만들지 않았습니다.
+ *  - 트리거 설치: setupPromoTrigger_()가 없으면 만듭니다. 권한 문제로
+ *    안 되면 편집기에서 직접 설치하세요 (트리거 → 트리거 추가 →
+ *    processPromoQueue_ → 시간 기반 → 15분마다).
+ *  - 발송 기록은 '문자발송기록' 탭에 남습니다. 테스트 발송도 기록에
+ *    남고 하루 한도에 포함됩니다.
+ *  - 주문 알림(notifyNewOrder_)도 구분 '주문알림'으로 기록에 남아
+ *    관리자 페이지 문자 전송 모니터링에 함께 표시됩니다. 주문 알림은
+ *    홍보 하루 한도 계산에 들어가지 않습니다 (countTodaySent_은
+ *    '홍보'만 합산합니다).
+ * ============================================================ */
+/** 홍보 문자 하루 발송 상한 (성공 건수 기준, '문자발송기록' 탭 합산). */
+var PROMO_DAILY_LIMIT = 100;
+/** 한 번에 예약할 수 있는 최대 건수 (큐에 넣는 건수). */
+var PROMO_QUEUE_MAX = 500;
+/** 큐 처리기 1회 실행 때 보내는 최대 건수. */
+var PROMO_BATCH_SIZE = 4;
+/** 큐 처리기 건 사이 대기 시간 (ms, 60초). */
+var PROMO_QUEUE_SEND_DELAY_MS = 60000;
+/** 홍보 문자 앞·뒤 문구 */
+var PROMO_PREFIX = '[효돈농원] ';
+var PROMO_OPT_OUT = '수신거부는 답장으로 알려주세요.';
+/** 문자발송큐 탭 (열: 예약일시, 번호, 메시지, 상태, 처리시작, 발송일시, 오류) */
+var SMS_QUEUE_SHEET_NAME = '문자발송큐';
+var SMS_QUEUE_HEADERS = ['예약일시', '번호', '메시지', '상태', '처리시작', '발송일시', '오류'];
+/** 문자발송기록 탭 (열: 날짜, 구분, 메시지, 대상수, 성공, 실패, 실패번호) */
+var SMS_LOG_SHEET_NAME = '문자발송기록';
+var SMS_LOG_HEADERS = ['날짜', '구분', '메시지', '대상수', '성공', '실패', '실패번호'];
+
+/** 비밀번호 확인 전 입력 확인에서 '오늘' 날짜(KST yyyy-MM-dd)를 구합니다. */
+function todayKst_() {
+  return Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+}
+
+/** 홍보 문자 최종 문장: 앞에 [효돈농원]이 없으면 붙이고, 뒤에 수신거부 안내를 새 줄에 붙입니다. 순수 함수입니다. */
+function buildPromoMessage_(message) {
+  var text = String(message || '').trim();
+  if (text.indexOf('[효돈농원]') !== 0) text = PROMO_PREFIX + text;
+  if (text.indexOf(PROMO_OPT_OUT) < 0) text = text + '\n' + PROMO_OPT_OUT;
+  return text;
+}
+
+/** 번호에서 숫자만 남기고, +82(82...)로 시작하면 국내 형식(0...)으로 바꿉니다. 순수 함수입니다. */
+function normalizeMobileDigits_(raw) {
+  var d = String(raw || '').replace(/[^0-9]/g, '');
+  if (d.indexOf('82') === 0 && d.length >= 11 && d.length <= 13) {
+    var rest = d.substring(2);
+    if (/^(10|11|16|17|18|19)/.test(rest)) return '0' + rest;
+  }
+  return d;
+}
+
+/** 한국 휴대폰 번호인지 확인합니다 (010/011/016/017/018/019, 10~11자리). 순수 함수입니다. */
+function isValidMobileDigits_(digits) {
+  var d = String(digits || '');
+  if (d.length !== 10 && d.length !== 11) return false;
+  return /^(010|011|016|017|018|019)/.test(d);
+}
+
+/**
+ * 홍보 문자용 번호를 파싱합니다.
+ * 배열 또는 '한 줄에 하나 또는 쉼표 구분' 텍스트를 받아, 숫자만 남기고
+ * E.164로 변환·중복 제거하고, 한국 휴대폰만 유효한 것만 남깁니다.
+ * 순수 함수입니다 (Apps Script 서비스에 의존하지 않습니다).
+ */
+function parsePromoNumbers_(input) {
+  var raw = [];
+  if (Array.isArray(input)) {
+    raw = input;
+  } else if (typeof input === 'string') {
+    raw = input.split(/[\n,;]+/);
+  }
+  var seen = {};
+  var out = [];
+  for (var i = 0; i < raw.length; i++) {
+    var digits = normalizeMobileDigits_(raw[i]);
+    if (!isValidMobileDigits_(digits)) continue;
+    var e164 = formatPhoneE164_(digits);
+    if (!e164 || seen[e164]) continue;
+    seen[e164] = true;
+    out.push(e164);
+  }
+  return out;
+}
+
+/** E.164 번호(+8210...)를 국내 형식(010...)으로 바꿉니다. 표시·기록용입니다. 순수 함수입니다. */
+function e164ToDomestic_(e164) {
+  var digits = String(e164 || '').replace(/[^0-9]/g, '');
+  if (digits.indexOf('82') === 0 && digits.length > 10) return '0' + digits.substring(2);
+  return digits;
+}
+
+/** 대기 건수와 하루 상한으로 끝나는 데 걸리는 일수를 계산합니다 (올림). 순수 함수입니다. */
+function estimatePromoDays_(pending, dailyLimit) {
+  if (!pending || pending <= 0) return 0;
+  if (!dailyLimit || dailyLimit <= 0) return 0;
+  return Math.ceil(pending / dailyLimit);
+}
+
+/** '문자발송기록' 행들에서 오늘(KST yyyy-MM-dd) '홍보' 발송 성공 건수를 합산합니다. 순수 함수입니다. */
+function countTodaySent_(rows, today) {
+  var n = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i] || [];
+    if (String(r[0] || '').substring(0, 10) === today && String(r[1] || '') === '홍보') {
+      n += Number(r[4] || 0);
+    }
+  }
+  return n;
+}
+
+/** 큐 행들에서 해당 상태인 건수를 셉니다 (상태는 4번째 열). 순수 함수입니다. */
+function countQueueStatus_(rows, status) {
+  var n = 0;
+  for (var i = 0; i < rows.length; i++) {
+    if (String((rows[i] || [])[3] || '') === status) n++;
+  }
+  return n;
+}
+
+/**
+ * 큐 배치 1회분을 1건씩 순차 발송합니다.
+ * sendFn(phone, message)는 성공 시 true, 실패 시 false를 반환합니다.
+ * 건마다 sleepFn(대기 시간)을 부릅니다 (마지막 건 뒤에도 쉽니다).
+ * 순수 함수입니다 (sendFn/sleepFn을 주입받습니다).
+ * 반환: [{phone, message, ok, error}] (보낸 순서 그대로)
+ */
+function sendPromoBatch_(batch, sendFn, sleepFn) {
+  var results = [];
+  for (var i = 0; i < batch.length; i++) {
+    var item = batch[i] || {};
+    var ok = false;
+    var errText = '';
+    try {
+      ok = !!sendFn(item.phone, item.message);
+      if (!ok) errText = '발송 실패';
+    } catch (e) {
+      ok = false;
+      errText = String(e);
+    }
+    results.push({ phone: item.phone, message: item.message, ok: ok, error: errText });
+    if (sleepFn) sleepFn(PROMO_QUEUE_SEND_DELAY_MS);
+  }
+  return results;
+}
+
+/** '문자발송큐' 탭을 가져옵니다. 없으면 헤더와 함께 만듭니다. */
+function getPromoQueueSheet_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(SMS_QUEUE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SMS_QUEUE_SHEET_NAME);
+    sheet.getRange(1, 1, 1, SMS_QUEUE_HEADERS.length).setValues([SMS_QUEUE_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** '문자발송기록' 탭을 가져옵니다. 없으면 헤더와 함께 만듭니다. */
+function getSmsLogSheet_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(SMS_LOG_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SMS_LOG_SHEET_NAME);
+    sheet.getRange(1, 1, 1, SMS_LOG_HEADERS.length).setValues([SMS_LOG_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** '문자발송기록' 탭에 발송 기록 1행을 남깁니다. */
+function logPromoSend_(sheet, kind, message, total, sent, failed, failedNumbers) {
+  sheet.appendRow([
+    Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss'),
+    kind, message, total, sent, failed, (failedNumbers || []).join(', ')
+  ]);
+}
+
+/** 오늘(KST) '홍보' 발송 성공 건수를 '문자발송기록' 탭에서 읽습니다. */
+function readTodaySent_(logSheet, today) {
+  var lastRow = logSheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var rows = logSheet.getRange(2, 1, lastRow - 1, SMS_LOG_HEADERS.length).getDisplayValues();
+  return countTodaySent_(rows, today);
+}
+
+/**
+ * 홍보 문자 예약 (관리자 전용, 배포 2)
+ * body: { action: 'reservePromo', key: 관리자 키,
+ *         message: 문자 내용, numbers?: [번호...], numbersText?: '한 줄에 하나 또는 쉼표 구분' }
+ * 번호는 검증(중복 제거, 한국 휴대폰) 뒤 최대 500건까지 '문자발송큐' 탭에
+ * 상태 '대기'로 한 행씩 저장합니다. 즉시 발송하지 않습니다.
+ * 반환: {ok, queued, message(최종 문자), estimatedDays, pending(예약 뒤 총 대기 건수)}
+ */
+function reservePromo(data) {
+  try {
+    checkAdmin(data && data.key);
+    var message = String((data && data.message) || '').trim();
+    if (!message) return respond({ ok: false, error: '보낼 문자를 입력하세요.' });
+    if (message.length > 2000) return respond({ ok: false, error: '문자는 2000자까지 보낼 수 있습니다.' });
+    var numbers = parsePromoNumbers_((data && data.numbers) || (data && data.numbersText) || '');
+    if (!numbers.length) {
+      return respond({ ok: false, error: '유효한 휴대폰 번호가 없습니다. 010으로 시작하는 번호를 한 줄에 하나씩 입력하세요.' });
+    }
+    if (numbers.length > PROMO_QUEUE_MAX) {
+      return respond({ ok: false, error: '한 번에 예약할 수 있는 건수는 최대 ' + PROMO_QUEUE_MAX + '건입니다. (' + numbers.length + '건 입력됨)' });
+    }
+    var finalMessage = buildPromoMessage_(message);
+    var sheet = getPromoQueueSheet_();
+    var stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    var rowsToAdd = [];
+    for (var i = 0; i < numbers.length; i++) {
+      rowsToAdd.push([stamp, e164ToDomestic_(numbers[i]), finalMessage, '대기', '', '', '']);
+    }
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    var pendingAfter = numbers.length;
+    try {
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, SMS_QUEUE_HEADERS.length).getDisplayValues();
+        pendingAfter += countQueueStatus_(rows, '대기');
+      }
+      // 한 번에 묶어서 씁니다 (행마다 한 줄씩 쓰면 500건까지 100초 넘게 걸리고, 그 사이 고객 주문이 막힙니다).
+      sheet.getRange(lastRow + 1, 1, rowsToAdd.length, SMS_QUEUE_HEADERS.length).setValues(rowsToAdd);
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({
+      ok: true,
+      queued: numbers.length,
+      message: finalMessage,
+      estimatedDays: estimatePromoDays_(pendingAfter, PROMO_DAILY_LIMIT),
+      pending: pendingAfter
+    });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 홍보 문자 1건 테스트 발송 (관리자 전용, 배포 2) — 즉시 발송합니다.
+ * body: { action: 'sendPromoTest', key: 관리자 키,
+ *         message: 문자 내용, numbers?: [번호 1개], numbersText?: 번호 1개 }
+ * 작성한 메시지를 입력한 1명에게만 보냅니다. 하루 한도(100건)에 포함되고
+ * '문자발송기록' 탭에 남습니다.
+ */
+function sendPromoTest(data) {
+  try {
+    checkAdmin(data && data.key);
+    if (!SMSGATE_USERNAME || !SMSGATE_PASSWORD) {
+      return respond({ ok: false, error: 'SMS Gateway 계정을 먼저 입력하세요. (Code.gs의 SMSGATE_USERNAME·SMSGATE_PASSWORD)' });
+    }
+    var message = String((data && data.message) || '').trim();
+    if (!message) return respond({ ok: false, error: '보낼 문자를 입력하세요.' });
+    if (message.length > 2000) return respond({ ok: false, error: '문자는 2000자까지 보낼 수 있습니다.' });
+    var numbers = parsePromoNumbers_((data && data.numbers) || (data && data.numbersText) || '');
+    if (numbers.length !== 1) {
+      return respond({ ok: false, error: '테스트 발송은 번호 1개만 보낼 수 있습니다. 테스트 번호를 1개만 입력하세요.' });
+    }
+    var today = todayKst_();
+    var logSheet = getSmsLogSheet_();
+    if (readTodaySent_(logSheet, today) >= PROMO_DAILY_LIMIT) {
+      return respond({ ok: false, error: '오늘 하루 발송 한도(100건)를 모두 사용했습니다. 내일 다시 보내세요.' });
+    }
+    var finalMessage = buildPromoMessage_(message);
+    var ok = false;
+    try { ok = sendSmsViaSmsGate_(numbers[0], finalMessage); } catch (e) { ok = false; }
+    var domestic = e164ToDomestic_(numbers[0]);
+    logPromoSend_(logSheet, '홍보', finalMessage, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [domestic]);
+    if (ok) return respond({ ok: true, sent: 1, preview: finalMessage });
+    return respond({ ok: false, error: '문자 발송에 실패했습니다. SMS Gateway 앱이 켜져 있고 Cloud Server에 연결됐는지 확인하세요.' });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 홍보 문자 큐 처리기 — 시간 트리거(15분마다)로 실행됩니다.
+ * 상태 '대기'인 행을 오래된 순으로 읽어, 한 번에 최대 4건까지만 보내고,
+ * 건마다 60초 쉽니다. 4건이면 약 250초라 6분 실행 제한 안에 듭니다.
+ * 하루 상한 100건(오늘 성공 합산)은 '문자발송기록' 탭으로 계산하고,
+ * 남은 한도까지만 보냅니다. 보낸 행은 '발송완료'+발송일시, 실패는
+ * '실패'+오류. 동시에 두 번 실행되지 않게, 행을 '발송중'으로 표시하는
+ * 구간만 짧게 잠급니다. 15분 넘게 '발송중'인 행은 중단된 실행의 흔적이라
+ * '대기'로 되돌려 다시 보냅니다.
+ */
+function processPromoQueue_() {
+  var queueSheet = getPromoQueueSheet_();
+  var logSheet = getSmsLogSheet_();
+  var now = new Date();
+  var today = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd');
+  var stamp = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+
+  var todaySent = readTodaySent_(logSheet, today);
+  var remaining = PROMO_DAILY_LIMIT - todaySent;
+  if (remaining <= 0) {
+    Logger.log('processPromoQueue_: 오늘 하루 한도(100건)를 모두 사용했습니다.');
+    return;
+  }
+
+  var cutoffStamp = Utilities.formatDate(new Date(now.getTime() - 15 * 60 * 1000), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  var batch = [];
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    Logger.log('processPromoQueue_: 다른 실행이 진행 중이라 이번에는 건너뜁니다.');
+    return;
+  }
+  try {
+    var qLast = queueSheet.getLastRow();
+    if (qLast < 2) return;
+    var qRows = queueSheet.getRange(2, 1, qLast - 1, SMS_QUEUE_HEADERS.length).getDisplayValues();
+    for (var i = 0; i < qRows.length; i++) {
+      if (String(qRows[i][3] || '') === '발송중') {
+        var startedStr = String(qRows[i][4] || '');
+        if (!startedStr || startedStr < cutoffStamp) {
+          queueSheet.getRange(i + 2, 4).setValue('대기');
+          queueSheet.getRange(i + 2, 5).setValue('');
+          qRows[i][3] = '대기';
+          qRows[i][4] = '';
+        }
+      }
+    }
+    var maxBatch = Math.min(PROMO_BATCH_SIZE, remaining);
+    for (var j = 0; j < qRows.length && batch.length < maxBatch; j++) {
+      if (String(qRows[j][3] || '') !== '대기') continue;
+      var rowIndex = j + 2;
+      queueSheet.getRange(rowIndex, 4).setValue('발송중');
+      queueSheet.getRange(rowIndex, 5).setValue(stamp);
+      batch.push({ row: rowIndex, phone: String(qRows[j][1] || '').trim(), message: String(qRows[j][2] || '') });
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  if (!batch.length) return;
+
+  var results = sendPromoBatch_(batch, sendSmsViaSmsGate_, function (ms) { Utilities.sleep(ms); });
+  for (var k = 0; k < batch.length; k++) {
+    var item = batch[k];
+    var res = results[k];
+    var sentStamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    queueSheet.getRange(item.row, 4).setValue(res.ok ? '발송완료' : '실패');
+    queueSheet.getRange(item.row, 6).setValue(sentStamp);
+    if (!res.ok) queueSheet.getRange(item.row, 7).setValue(res.error || '발송 실패');
+    logPromoSend_(logSheet, '홍보', item.message, 1, res.ok ? 1 : 0, res.ok ? 0 : 1, res.ok ? [] : [item.phone]);
+  }
+}
+
+/** processPromoQueue_ 시간 트리거가 이미 있는지 확인합니다. */
+function hasPromoTrigger_() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === 'processPromoQueue_') return true;
+    }
+  } catch (err) {
+    Logger.log('hasPromoTrigger_ failed: ' + err);
+  }
+  return false;
+}
+
+/**
+ * processPromoQueue_를 15분마다 실행하는 시간 트리거를 만듭니다.
+ * 이미 있으면 새로 만들지 않습니다. 권한 문제로 만들 수 없으면 false를
+ * 반환합니다 (편집기 → 트리거 → 트리거 추가 → processPromoQueue_
+ * → 시간 기반 → 15분마다 로 직접 설치하세요).
+ */
+function setupPromoTrigger_() {
+  if (hasPromoTrigger_()) return true;
+  try {
+    ScriptApp.newTrigger('processPromoQueue_').timeBased().everyMinutes(15).create();
+    return true;
+  } catch (err) {
+    Logger.log('setupPromoTrigger_ failed: ' + err);
+    return false;
+  }
+}
+
+/** 홍보 문자 큐 트리거 설치 (관리자 전용, 배포 2) */
+function setupPromoTrigger(data) {
+  try {
+    checkAdmin(data && data.key);
+    if (setupPromoTrigger_()) return respond({ ok: true, installed: true });
+    return respond({ ok: false, error: '트리거 설치에 실패했습니다. 편집기에서 직접 설치하세요 (트리거 → 트리거 추가 → processPromoQueue_ → 시간 기반 → 15분마다).' });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 홍보 문자 예약 현황 (관리자 전용, 배포 2)
+ * 반환: {ok, queue: {waiting, sending, done, failed},
+ *         todaySent, limit, triggerInstalled, recent: [최신 10건]}
+ * 최근 기록: [{date, kind, message, total, sent, failed, failedNumbers}]
+ */
+function getPromoStatus(data) {
+  try {
+    checkAdmin(data && data.key);
+    var queueSheet = getPromoQueueSheet_();
+    var logSheet = getSmsLogSheet_();
+    var queue = { waiting: 0, sending: 0, done: 0, failed: 0 };
+    var qLast = queueSheet.getLastRow();
+    if (qLast >= 2) {
+      var qRows = queueSheet.getRange(2, 1, qLast - 1, SMS_QUEUE_HEADERS.length).getDisplayValues();
+      queue.waiting = countQueueStatus_(qRows, '대기');
+      queue.sending = countQueueStatus_(qRows, '발송중');
+      queue.done = countQueueStatus_(qRows, '발송완료');
+      queue.failed = countQueueStatus_(qRows, '실패');
+    }
+    var today = todayKst_();
+    var todaySent = readTodaySent_(logSheet, today);
+    var recent = [];
+    var lLast = logSheet.getLastRow();
+    if (lLast >= 2) {
+      var lRows = logSheet.getRange(2, 1, lLast - 1, SMS_LOG_HEADERS.length).getDisplayValues();
+      var start = Math.max(0, lRows.length - 10);
+      for (var i = lRows.length - 1; i >= start; i--) {
+        recent.push({
+          date: String(lRows[i][0] || ''),
+          kind: String(lRows[i][1] || ''),
+          message: String(lRows[i][2] || ''),
+          total: Number(lRows[i][3] || 0),
+          sent: Number(lRows[i][4] || 0),
+          failed: Number(lRows[i][5] || 0),
+          failedNumbers: String(lRows[i][6] || '')
+        });
+      }
+    }
+    return respond({
+      ok: true,
+      queue,
+      todaySent,
+      limit: PROMO_DAILY_LIMIT,
+      triggerInstalled: hasPromoTrigger_(),
+      recent
+    });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
