@@ -71,6 +71,7 @@
     overflow-wrap:break-word;
   }
   img{max-width:100%; display:block}
+  .gallery img{filter:saturate(.9) contrast(.98)}
   a{color:inherit; text-decoration:none}
   button{font-family:inherit; letter-spacing:inherit}
   h1,h2,h3,h4,p{margin:0}
@@ -136,7 +137,7 @@
     height:var(--header-h); max-width:var(--container); margin:0 auto; padding-inline:var(--gutter);
   }
   .brand{display:flex; align-items:center; gap:9px; min-height:44px}
-  .brand__mark{font-size:22px; line-height:1}
+  .brand__mark{display:grid; place-items:center; width:32px; height:32px; border-radius:50%; background:var(--orange); color:#fff; font-family:var(--serif); font-size:17px; font-weight:700; line-height:1}
   .brand__text strong{display:block; font-family:var(--serif); font-size:17px; letter-spacing:0; line-height:1.2; font-weight:700}
   .brand__text em{display:block; font-style:normal; font-size:11.5px; color:var(--muted); letter-spacing:.02em; margin-top:1px}
   .topbar__nav{display:flex; align-items:center; gap:2px; font-size:14.5px; font-weight:600}
@@ -150,7 +151,7 @@
   /* ---------- hero ---------- */
   .hero{position:relative; isolation:isolate; overflow:hidden; background:#2a1d12; color:#fff}
   .hero__media{position:absolute; inset:0}
-  .hero__img{width:100%; height:100%; object-fit:cover; object-position:62% 52%}
+  .hero__img{width:100%; height:100%; object-fit:cover; object-position:62% 52%; filter:saturate(.88) contrast(.97)}
   @media (min-width:768px){ .hero__img{object-position:58% 50%} }
   .hero__shade{
     position:absolute; inset:0;
@@ -253,7 +254,7 @@
   }
   .product.is-selected{border-color:var(--orange); background:#fffaf6; box-shadow:0 8px 24px rgba(217,85,31,.14)}
   .product__thumb{position:relative; width:96px; height:96px; border-radius:12px; overflow:hidden; background:#f3e7d8; align-self:start}
-  .product__thumb img{width:100%; height:100%; object-fit:cover; display:block}
+  .product__thumb img{width:100%; height:100%; object-fit:cover; display:block; filter:saturate(.9) contrast(.98)}
   .product__body{min-width:0; display:flex; flex-direction:column; gap:2px}
   .product__tags{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:7px}
   .product__badge{
@@ -553,7 +554,7 @@
 <header class="topbar">
   <div class="topbar__inner">
     <a class="brand" href="#top" aria-label="효돈농원 홈">
-      <span class="brand__mark" aria-hidden="true">🍊</span>
+      <span class="brand__mark" aria-hidden="true">효</span>
       <span class="brand__text">
         <strong>효돈농원</strong>
         <em>제주 서귀포 하효동</em>
@@ -563,7 +564,7 @@
       <a href="#products">상품</a>
       <a href="#order">주문서</a>
       <a href="#faq">배송·문의</a>
-      <a class="topbar__call" href="tel:01026961326"><span aria-hidden="true">☎</span> 전화 주문</a>
+      <a class="topbar__call" href="tel:01026961326">전화 주문</a>
     </nav>
   </div>
 </header>
@@ -576,8 +577,8 @@
     </div>
     <div class="hero__inner wrap">
       <p class="hero__eyebrow">제주 서귀포 하효동 · 산지직송</p>
-      <h1 id="hero-title">오늘 딴 귤을<br>오늘 보내드립니다</h1>
-      <p class="hero__desc">효돈농원이 직접 기르고 한 알씩 선별한 노지감귤과 황금향. 중간 유통 없이 농장에서 바로 보냅니다.</p>
+      <h1 id="hero-title">하효동 밭에서 오늘 딴 귤,<br>오늘 로젠으로 보냅니다</h1>
+      <p class="hero__desc">서귀포시 하효동 1233, 칠십리로 636 효돈농원에서 기른 노지감귤과 황금향. 주문받은 만큼만 그날 따서 보냅니다.</p>
       <p class="hero__meta">노지감귤 10kg <b>21,000원</b>부터 · 로젠택배비 포함</p>
       <div class="hero__actions">
         <a class="btn btn--primary btn--lg" href="#products">상품 보고 주문하기</a>
@@ -588,32 +589,32 @@
 
   <div class="trust">
     <ul class="wrap trust__list" aria-label="효돈농원 특징">
-      <li><span aria-hidden="true">🌱</span>하효동 산지직송</li>
-      <li><span aria-hidden="true">🧺</span>당일 수확·선별</li>
-      <li><span aria-hidden="true">🚚</span>로젠택배 무료배송</li>
+      <li>하효동 산지직송</li>
+      <li>당일 수확·선별</li>
+      <li>로젠택배 무료배송</li>
     </ul>
   </div>
 
   <section class="section section--alt" aria-labelledby="why-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Why HYODON</p>
-        <h2 id="why-title">농장에서 문 앞까지,<br class="br-md"> 한 번도 거치지 않는 귤</h2>
-        <p class="lead">중간 유통 없이, 수확한 날 그대로 보내드립니다.</p>
+        <p class="eyebrow">효돈농원은</p>
+        <h2 id="why-title">수확한 날, 밭에서 바로 보냅니다</h2>
+        <p class="lead">칠십리로 636 효돈농원 밭에서 딴 귤을 주문 순서대로 선별해 로젠택배로 보냅니다.</p>
       </div>
       <ul class="features">
         <li class="feature">
-          <div class="feature__icon" aria-hidden="true">🌱</div>
+          <div class="feature__icon" aria-hidden="true">1</div>
           <h3>하효동 산지직송</h3>
           <p>서귀포시 하효동, 효돈농원 밭에서 기른 귤을 그대로 보냅니다.</p>
         </li>
         <li class="feature">
-          <div class="feature__icon" aria-hidden="true">🧺</div>
+          <div class="feature__icon" aria-hidden="true">2</div>
           <h3>당일 수확·선별</h3>
           <p>주문 순서대로 그날 수확해 선별하고 바로 출고합니다.</p>
         </li>
         <li class="feature">
-          <div class="feature__icon" aria-hidden="true">🚚</div>
+          <div class="feature__icon" aria-hidden="true">3</div>
           <h3>로젠택배 무료배송</h3>
           <p>모든 상품 가격에 택배비가 포함되어 있습니다.</p>
         </li>
@@ -624,7 +625,7 @@
   <section class="section" id="products" aria-labelledby="products-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Menu</p>
+        <p class="eyebrow">상품</p>
         <h2 id="products-title">상품 선택</h2>
         <p class="lead">수량을 고르면 금액이 자동으로 계산됩니다. 여러 상품을 한 번에 담아 한 번에 입금하실 수 있어요.</p>
       </div>
@@ -645,13 +646,13 @@
   <section class="section section--alt" id="order" aria-labelledby="order-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Order</p>
+        <p class="eyebrow">주문서</p>
         <h2 id="order-title">주문서 작성</h2>
         <p class="lead">아래 내용을 확인하고 주문해 주세요. 입금이 확인되면 순서대로 출고합니다.</p>
       </div>
 
       <div class="notice" id="setupNotice" hidden>
-        <span aria-hidden="true">📮</span>
+        <span aria-hidden="true">※</span>
         <span><strong>지금은 주문서를 문자로 접수하고 있습니다.</strong> 주문 후 <strong>‘주문 내역 복사’</strong>를 눌러 <a href="tel:01026961326">010-2696-1326</a>으로 보내주시면 확인 후 출고됩니다.</span>
       </div>
 
@@ -793,7 +794,7 @@
   <section class="section" id="faq" aria-labelledby="how-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">How it works</p>
+        <p class="eyebrow">주문 방법</p>
         <h2 id="how-title">주문은 이렇게 진행됩니다</h2>
       </div>
       <div class="steps">
@@ -830,7 +831,7 @@
   <section class="section section--alt" aria-labelledby="gallery-title">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Farm</p>
+        <p class="eyebrow">농원</p>
         <h2 id="gallery-title">효돈농원의 귤</h2>
       </div>
       <div class="gallery">
@@ -843,7 +844,7 @@
           <figcaption>황금향 · 5kg</figcaption>
         </figure>
       </div>
-      <p class="farm-note"><b>제주특별자치도 서귀포시 칠십리로 636 (하효동 1233) · 효돈농원</b><br>사진은 상품 이해를 돕기 위한 이미지이며, 실제 수확 시기와 상태에 따라 모양·크기는 조금 다를 수 있습니다.</p>
+      <p class="farm-note"><b>제주특별자치도 서귀포시 칠십리로 636 (하효동 1233) · 효돈농원</b><br>위 사진은 참고용 이미지입니다. 실제 농원 사진으로 교체 중이며, 받은 귤은 수확 시기에 따라 모양·크기가 조금 다를 수 있습니다.</p>
     </div>
   </section>
 </main>
@@ -851,9 +852,9 @@
 <section class="cta-band" aria-labelledby="cta-title">
   <div class="wrap cta-band__inner">
     <div>
-      <p class="eyebrow">Order today</p>
-      <h2 id="cta-title">오늘 수확한 귤, 오늘 보내드립니다</h2>
-      <p class="lead">노지감귤 10kg 21,000원부터 · 로젠택배비 포함 · 문자 한 통이면 주문 끝</p>
+      <p class="eyebrow">오늘 주문</p>
+      <h2 id="cta-title">주문하면 내일·모레 문 앞에 도착합니다</h2>
+      <p class="lead">노지감귤 10kg 21,000원부터 · 택배비 포함 · 출고 후 보통 1~3일</p>
     </div>
     <div class="cta-band__actions">
       <a class="btn btn--primary btn--lg" href="#products">상품 보고 주문하기</a>
@@ -929,8 +930,7 @@ const CONFIG = {
       id: "mandarin-home",
       name: "노지감귤 가정용 10kg",
       tag: "가정용",
-      badge: "가장 많이 찾는",
-      desc: "알이 고르고 맛 좋은 노지감귤을 넉넉하게. 크기와 모양이 조금씩 달라도 맛은 그대로입니다.",
+      desc: "10kg 한 상자. 크기와 모양이 조금씩 다릅니다. 가정에서 먹기 좋은 노지감귤입니다.",
       weight: "10kg",
       price: 21000,
       image: "assets/tangerine.jpg"
@@ -939,7 +939,7 @@ const CONFIG = {
       id: "mandarin-gift",
       name: "노지감귤 선물용 10kg",
       tag: "선물용",
-      desc: "크기가 고른 것만 골라 선물용으로 담았습니다. 감사 인사에 좋은 10kg 한 상자.",
+      desc: "10kg 한 상자. 크기가 고른 것만 골라 담았습니다. 선물용 박스 포장입니다.",
       weight: "10kg",
       price: 38000,
       image: "assets/tangerine.jpg"
