@@ -66,6 +66,8 @@ function doPost(e) {
 
     // 관리자 업데이트 (admin.html에서 보낸 요청)
     if (data.action === 'update') return adminUpdate(data);
+    if (data.action === 'updateBatch') return adminUpdateBatch(data);
+    if (data.action === 'delete') return adminDelete(data);
 
     // 필수값 확인 (홈페이지에서도 검사하지만 마지막으로 한 번 더)
     var missing = [];
@@ -188,6 +190,46 @@ function adminList(key) {
     }
     orders.reverse(); // 최신 주문이 위로
     return respond({ ok: true, orders: orders });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+function adminUpdateBatch(data) {
+  try {
+    checkAdmin(data && data.key);
+    var updates = (data && data.updates) || [];
+    if (!updates.length) return respond({ ok: false, error: '업데이트할 주문이 없습니다.' });
+    var sheet = getSheet();
+    var lastRow = sheet.getLastRow();
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      for (var i = 0; i < updates.length; i++) {
+        var u = updates[i] || {};
+        var row = Number(u.row || 0);
+        if (!row || row < 2 || row > lastRow) continue;
+        sheet.getRange(row, 12).setValue(u.paid ? '확인' : '');
+        sheet.getRange(row, 13).setValue(safe(u.tracking));
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, updated: updates.length });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+function adminDelete(data) {
+  try {
+    checkAdmin(data && data.key);
+    var row = Number(data && data.row || 0);
+    if (!row || row < 2) return respond({ ok: false, error: '잘못된 행 번호입니다.' });
+    var sheet = getSheet();
+    if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+    sheet.deleteRow(row);
+    return respond({ ok: true, row: row });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
