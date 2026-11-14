@@ -19,8 +19,8 @@
  *      상품을 추가·수정·노출 중단합니다. 주문이 들어오면 카탈로그 가격으로
  *      금액을 서버에서 다시 계산합니다 (탭이 비어 있으면 클라이언트 금액 유지).
  *      아래 '상품 관리' 절을 보세요.
- *   7) 새 주문 문자 알림 (Textbee): 주문이 접수되면 농원 전화번호로 문자 1건.
- *      키가 비어 있으면 건너뜁니다. 아래 '문자 알림' 절을 보세요.
+ *   7) 새 주문 문자 알림 (SMS Gateway for Android, 클라우드 모드): 주문이 접수되면 농원 전화번호로 문자 1건.
+ *      계정이 비어 있으면 건너뜁니다. 아래 '문자 알림' 절을 보세요.
  *
  * 설치 방법은 같은 저장소의 apps-script/README.md 를 보세요.
  * ------------------------------------------------------------
@@ -42,13 +42,14 @@ var TIMEZONE = 'Asia/Seoul';
 var NOTIFY_EMAIL = '';
 
 /**
- * Textbee API 키 — 문자 발송용 안드로이드 기기와 연결된 키입니다.
+ * SMS Gateway for Android 계정 — 문자 발송용 안드로이드 기기의 클라우드 계정입니다.
  * GitHub 저장소에는 빈칸으로 두고, Apps Script 편집기에서만 입력하세요.
- * 키 발급: https://textbee.dev 에서 계정 만들고 API 키 발급,
- * 발송용 안드로이드 폰에 Textbee 앱을 설치해 같은 계정으로 로그인합니다.
- * 키가 비어 있으면 문자 알림은 조용히 건너뛰고 주문은 정상 접수됩니다.
+ * 계정 확인: 안드로이드 폰에 SMS Gateway for Android 앱을 설치하고
+ * Cloud Server를 켠 뒤 Sign Up(이메일 불필요)하면 화면에 아이디·비밀번호가 뜹니다.
+ * 계정이 비어 있으면 문자 알림은 조용히 건너뛰고 주문은 정상 접수됩니다.
  */
-var TEXTBEE_API_KEY = '';
+var SMSGATE_USERNAME = '';
+var SMSGATE_PASSWORD = '';
 
 /** 새 주문 알림 문자를 받을 농원 전화번호 (편집기에서 바꾸면 됩니다). */
 var NOTIFY_PHONE = '010-2696-1326';
@@ -98,8 +99,8 @@ function doPost(e) {
     if (data.action === 'uploadPhoto') return uploadPhoto(data);
     if (data.action === 'deletePhoto') return deletePhoto(data);
 
-    // 새 주문 문자 알림 테스트 (admin.html에서 호출, 키 확인은 testNotify 안에서)
-    if (data.action === 'testNotify') return testNotify(data);
+    // 새 주문 문자 알림 테스트 (admin.html에서 호출, 계정 확인은 testSmsGate 안에서)
+    if (data.action === 'testSmsGate') return testSmsGate(data);
 
     // 상품 관리 (admin.html 상품 관리에서 보낸 요청)
     if (data.action === 'upsertProduct') return upsertProduct(data);
@@ -799,11 +800,11 @@ function repriceOrder_(data) {
 }
 
 /* ============================================================
- *  문자 알림 (Textbee) — 새 주문 시 농원에 문자 1건
+ *  문자 알림 (SMS Gateway for Android, 클라우드 모드) — 새 주문 시 농원에 문자 1건
  * ============================================================ */
 
-/** Textbee 수신자 번호 형식으로 바꿉니다 (01012345678 -> +821012345678). */
-function formatPhoneForTextbee_(phone) {
+/** 수신자 번호를 E.164 형식으로 바꿉니다 (01012345678 -> +821012345678). */
+function formatPhoneE164_(phone) {
   var digits = String(phone || '').replace(/[^0-9]/g, '');
   if (!digits) return '';
   if (digits.indexOf('82') === 0 && digits.length > 10) return '+' + digits;
@@ -811,26 +812,28 @@ function formatPhoneForTextbee_(phone) {
   return '+82' + digits;
 }
 
-/** Textbee로 문자 1건을 보냅니다. 성공하면 true, 실패하면 false를 반환합니다. */
-function sendSmsViaTextbee_(phone, message) {
-  if (!TEXTBEE_API_KEY) return false;
-  var to = formatPhoneForTextbee_(phone);
+/** SMS Gateway 클라우드 서버로 문자 1건을 보냅니다. 성공하면 true, 실패하면 false를 반환합니다. */
+function sendSmsViaSmsGate_(phone, message) {
+  if (!SMSGATE_USERNAME || !SMSGATE_PASSWORD) return false;
+  var to = formatPhoneE164_(phone);
   if (!to || !message) return false;
   try {
     var options = {
       method: 'post',
       contentType: 'application/json',
-      headers: { 'x-api-key': TEXTBEE_API_KEY },
-      payload: JSON.stringify({ recipients: [to], message: message }),
+      headers: {
+        'Authorization': 'Basic ' + Utilities.base64Encode(SMSGATE_USERNAME + ':' + SMSGATE_PASSWORD)
+      },
+      payload: JSON.stringify({ textMessage: { text: message }, phoneNumbers: [to] }),
       muteHttpExceptions: true
     };
-    var res = UrlFetchApp.fetch('https://api.textbee.dev/api/v1/gateway/send-sms', options);
+    var res = UrlFetchApp.fetch('https://api.sms-gate.app/3rdparty/v1/message', options);
     var code = res.getResponseCode();
     if (code >= 200 && code < 300) return true;
-    Logger.log('Textbee send failed: HTTP ' + code + ' ' + res.getContentText());
+    Logger.log('SMS Gateway send failed: HTTP ' + code + ' ' + res.getContentText());
     return false;
   } catch (err) {
-    Logger.log('Textbee send error: ' + err);
+    Logger.log('SMS Gateway send error: ' + err);
     return false;
   }
 }
@@ -840,16 +843,16 @@ function sendSmsViaTextbee_(phone, message) {
  * 메시지 예시:
  *   [효돈농원] 새 주문: 노지감귤 가정용 10kg 1박스 21,000원,
  *   테스트E 010-7777-9999 (입금자명: 테스트E)
- * 실패해도 주문 접수는 절대 막지 않습니다 (내부 try/catch + 키 없음 시 skip).
+ * 실패해도 주문 접수는 절대 막지 않습니다 (내부 try/catch + 계정 없음 시 skip).
  */
 function notifyNewOrder_(data, productText) {
   try {
-    if (!TEXTBEE_API_KEY) return;
+    if (!SMSGATE_USERNAME || !SMSGATE_PASSWORD) return;
     var amount = Number(data.totalAmount || 0).toLocaleString();
     var message = '[효돈농원] 새 주문: ' + productText + ' ' + amount + '원, ' +
       data.ordererName + ' ' + data.ordererPhone +
       ' (입금자명: ' + data.depositor + ')';
-    sendSmsViaTextbee_(NOTIFY_PHONE, message);
+    sendSmsViaSmsGate_(NOTIFY_PHONE, message);
   } catch (err) {
     // 문자 실패가 주문 접수를 막지 않게 합니다.
     Logger.log('notifyNewOrder_ failed: ' + err);
@@ -857,19 +860,19 @@ function notifyNewOrder_(data, productText) {
 }
 
 /**
- * 관리자 테스트용 (POST action=testNotify, 배포 2, checkAdmin 필수).
+ * 관리자 테스트용 (POST action=testSmsGate, 배포 2, checkAdmin 필수).
  * "[효돈농원] 문자 알림 테스트입니다."를 NOTIFY_PHONE으로 보냅니다.
- * 키가 비어 있으면 에러를 반환합니다.
+ * 계정이 비어 있으면 에러를 반환합니다.
  */
-function testNotify(data) {
+function testSmsGate(data) {
   checkAdmin(data && data.key);
-  if (!TEXTBEE_API_KEY) {
-    return respond({ ok: false, error: 'Textbee API 키를 먼저 입력하세요. (Code.gs의 TEXTBEE_API_KEY)' });
+  if (!SMSGATE_USERNAME || !SMSGATE_PASSWORD) {
+    return respond({ ok: false, error: 'SMS Gateway 계정을 먼저 입력하세요. (Code.gs의 SMSGATE_USERNAME·SMSGATE_PASSWORD)' });
   }
   try {
-    var ok = sendSmsViaTextbee_(NOTIFY_PHONE, '[효돈농원] 문자 알림 테스트입니다.');
+    var ok = sendSmsViaSmsGate_(NOTIFY_PHONE, '[효돈농원] 문자 알림 테스트입니다.');
     if (ok) return respond({ ok: true });
-    return respond({ ok: false, error: '문자 발송에 실패했습니다. Textbee 앱이 켜져 있는지 확인하세요.' });
+    return respond({ ok: false, error: '문자 발송에 실패했습니다. SMS Gateway 앱이 켜져 있고 Cloud Server에 연결됐는지 확인하세요.' });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
