@@ -344,9 +344,10 @@
     position:fixed; left:0; right:0; bottom:0; z-index:50; padding:10px 14px calc(10px + env(safe-area-inset-bottom));
     background:rgba(255,253,250,.97); border-top:1px solid var(--line);
     box-shadow:0 -6px 20px rgba(80,53,30,.1);
-    transform:translateY(120%); transition:transform .22s ease;
+    transform:translateY(120%); transition:transform .22s ease, visibility .22s ease;
+    visibility:hidden;
   }
-  .sticky-cart.is-visible{transform:translateY(0)}
+  .sticky-cart.is-visible{transform:translateY(0); visibility:visible}
   .sticky-cart__inner{display:flex; align-items:center; gap:12px; max-width:760px; margin:0 auto}
   .sticky-cart__info{flex:1 1 auto; min-width:0}
   .sticky-cart__qty{font-size:11.5px; color:var(--muted); font-weight:600}
@@ -889,9 +890,9 @@ const CONFIG = {
 
   function formatPhone(value) {
     const d = String(value || "").replace(/[^0-9]/g, "").slice(0, 11);
-    if (d.length < 4) return d;
-    if (d.length < 8) return d.slice(0, 3) + "-" + d.slice(3);
-    if (d.length < 11) return d.slice(0, 3) + "-" + d.slice(3, d.length - 4) + "-" + d.slice(-4);
+    if (d.length <= 3) return d;
+    if (d.length <= 6) return d.slice(0, 3) + "-" + d.slice(3);
+    if (d.length <= 10) return d.slice(0, 3) + "-" + d.slice(3, 6) + "-" + d.slice(6);
     return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7);
   }
 
@@ -1065,10 +1066,10 @@ const CONFIG = {
       alertEl.innerHTML = "<strong>주문 내역을 꼭 문자로 보내주세요.</strong><br>‘주문 내역 복사’를 누른 뒤 " +
         '<a href="' + CONFIG.FARM.phoneHref + '"><strong>' + CONFIG.FARM.phone + "</strong></a>으로 붙여넣어 보내주시면 접수됩니다.";
     } else if (result.ok === false) {
-      sub.textContent = "주문은 화면에 남아 있습니다. 자동 접수가 되지 않아 아래 내역을 문자로 보내주세요.";
+      sub.textContent = "주문 내용은 화면에 남아 있습니다. 자동 접수 결과를 확인하지 못해 아래 내역을 문자로 보내주시면 확실합니다.";
       alertEl.hidden = false;
-      alertEl.innerHTML = "<strong>자동 접수에 실패했습니다.</strong> (" + escapeHtml(result.error || "오류") + ")<br>" +
-        "번거롭지만 ‘주문 내역 복사’ 후 " + '<a href="' + CONFIG.FARM.phoneHref + '"><strong>' + CONFIG.FARM.phone + "</strong></a>으로 보내주세요.";
+      alertEl.innerHTML = "<strong>자동 접수 결과를 확인하지 못했습니다.</strong> (" + escapeHtml(result.error || "오류") + ")<br>" +
+        "이미 접수되었을 수도 있으니 중복을 막으려면 ‘주문 내역 복사’ 후 " + '<a href="' + CONFIG.FARM.phoneHref + '"><strong>' + CONFIG.FARM.phone + "</strong></a>으로 보내 주세요.";
     } else {
       sub.textContent = "주문이 저장되었습니다. 아래 계좌로 입금해 주시면 확인 후 순서대로 출고됩니다.";
     }
