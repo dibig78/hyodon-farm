@@ -1976,13 +1976,19 @@ function buildPromoMessage_(message) {
   return text;
 }
 
-/** 번호에서 숫자만 남기고, +82(82...)로 시작하면 국내 형식(0...)으로 바꿉니다. 순수 함수입니다. */
+/** 번호에서 숫자만 남기고, +82(82...)로 시작하면 국내 형식(0...)으로 바꿉니다.
+ *  앞자리 0이 소실된 번호도 복원합니다 ('010...'이 10자리 '10...'으로 저장된 경우).
+ *  10자리 국내 휴대폰은 없으므로 10으로 시작하는 10자리는 010 번호가 0을 잃은
+ *  것으로 보고 0을 붙이고, 011/016/017/018/019 번호가 0을 잃은 9자리도 복원합니다.
+ *  순수 함수입니다. */
 function normalizeMobileDigits_(raw) {
   var d = String(raw || '').replace(/[^0-9]/g, '');
   if (d.indexOf('82') === 0 && d.length >= 11 && d.length <= 13) {
     var rest = d.substring(2);
     if (/^(10|11|16|17|18|19)/.test(rest)) return '0' + rest;
   }
+  if (d.length === 10 && d.indexOf('10') === 0) return '0' + d;
+  if (d.length === 9 && /^(11|16|17|18|19)/.test(d)) return '0' + d;
   return d;
 }
 
@@ -2609,24 +2615,40 @@ function getPromoRecipientSheet_(create) {
     sheet = ss.insertSheet(PROMO_RECIPIENT_SHEET_NAME);
     sheet.getRange(1, 1, 1, PROMO_RECIPIENT_HEADERS.length).setValues([PROMO_RECIPIENT_HEADERS]);
     sheet.setFrozenRows(1);
+    // 전화번호 열(1열)은 텍스트 형식으로 둡니다 — 앞자리 0 유지.
+    sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
   }
   return sheet;
+}
+
+/** 저장된 수신자 전화번호가 요청 번호와 같은지 확인합니다.
+ *  저장값이 앞자리 0을 잃은 10자리('1080058173')여도 정규화 값
+ *  ('01080058173')으로 비교하고, 숫자 그대로도 비교합니다. 순수 함수입니다. */
+function promoRecipientPhoneMatches_(stored, requested) {
+  var s = String(stored || '').replace(/[^0-9]/g, '');
+  var r = String(requested || '').replace(/[^0-9]/g, '');
+  if (!s || !r) return false;
+  if (s === r) return true;
+  return normalizeMobileDigits_(s) === normalizeMobileDigits_(r);
 }
 
 /** 수신자 한 줄('전화번호 이름' 또는 전화번호만)을 파싱합니다.
  *  탭·콤마·공백으로 나눕니다. 번호가 공백으로 끊겨 있으면 앞 토큰부터
  *  최대 3개까지 이어붙여 유효한 번호가 되면 확정하고, 나머지는 이름입니다.
- *  반환: {phone: 국내 숫자, name: string}. 형식이 틀리면 null. 순수 함수입니다. */
+ *  탭·콤마로 '전화번호,이름,메모' 3칸이면 메모까지 뽑습니다.
+ *  반환: {phone: 국내 숫자, name: string, memo: string}. 형식이 틀리면 null. 순수 함수입니다. */
 function parsePromoRecipientLine_(line) {
   var text = String(line || '').trim();
   if (!text) return null;
   var fields = text.split(/[\t,]+/);
   var phone = '';
   var name = '';
+  var memo = '';
   if (fields.length >= 2) {
     phone = normalizeMobileDigits_(fields[0]);
     if (!isValidMobileDigits_(phone)) return null;
-    name = fields.slice(1).join(' ').trim();
+    name = fields[1].trim();
+    memo = fields.slice(2).join(' ').trim();
   } else {
     var tokens = text.split(/\s+/);
     var found = false;
@@ -2641,7 +2663,7 @@ function parsePromoRecipientLine_(line) {
     }
     if (!found) return null;
   }
-  return { phone: phone, name: name };
+  return { phone: phone, name: name, memo: memo };
 }
 
 /** '홍보수신자' 탭에서 수신거부(TRUE)인 번호(국내 숫자) 목록을 읽습니다. 탭이 없으면 빈 배열. */
@@ -2783,7 +2805,7 @@ function addPromoRecipients(data) {
         if (!String(item).trim()) continue;
         var one = parsePromoRecipientLine_(item);
         if (!one) { errors.push({ line: String(item).trim(), reason: '전화번호 형식이 잘못되었습니다.' }); continue; }
-        parsed.push({ phone: one.phone, name: one.name, memo: '' });
+        parsed.push({ phone: one.phone, name: one.name, memo: one.memo || '' });
       } else if (item && typeof item === 'object') {
         var p = normalizeMobileDigits_(item.phone);
         if (!isValidMobileDigits_(p)) { errors.push({ line: String(item.phone || ''), reason: '전화번호 형식이 잘못되었습니다.' }); continue; }
@@ -2816,14 +2838,15 @@ function addPromoRecipients(data) {
         toAdd.push(pr);
       }
       if (toAdd.length) {
-        // 전화번호 열(1열)은 텍스트 형식으로 둡니다 — 앞자리 0 유지.
-        sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
         var startRow = sheet.getLastRow() + 1;
         var values = [];
         for (var m = 0; m < toAdd.length; m++) {
           values.push([toAdd[m].phone, toAdd[m].name, toAdd[m].memo, 'FALSE', stamp]);
           added.push({ phone: toAdd[m].phone, name: toAdd[m].name, memo: toAdd[m].memo });
         }
+        // 전화번호 열(1열)은 쓰는 행에만 텍스트 형식('@')으로 둡니다 — 앞자리 0 유지.
+        // 전체 열 지정은 느리고, 쓰는 셀에 바로 지정하는 것이 확실합니다 (송장번호와 같은 방식).
+        sheet.getRange(startRow, 1, values.length, 1).setNumberFormat('@');
         sheet.getRange(startRow, 1, values.length, PROMO_RECIPIENT_HEADERS.length).setValues(values);
       }
     } finally {
@@ -2869,7 +2892,9 @@ function listPromoRecipients(data) {
           var flag = String(rows[i][3] || '').trim().toUpperCase();
           recipients.push({
             row: i + 2,
-            phone: String(rows[i][0] || ''),
+            // 앞자리 0을 잃은 10자리 저장값도 정규화해 돌려줍니다 — 화면·검색·선택이
+            // 010-... 11자리로 동작하게 합니다 (시트 값 자체는 건드리지 않습니다).
+            phone: normalizeMobileDigits_(String(rows[i][0] || '')),
             name: String(rows[i][1] || ''),
             memo: String(rows[i][2] || ''),
             optOut: flag === 'TRUE' || flag === '1',
@@ -2921,7 +2946,8 @@ function deletePromoRecipient(data) {
       if (phone) {
         var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
         for (var i = 0; i < rows.length; i++) {
-          if (normalizeMobileDigits_(rows[i][0]) === phone) {
+          // 저장값이 앞자리 0을 잃은 10자리여도 정규화·숫자 그대로 둘 다로 찾습니다.
+          if (promoRecipientPhoneMatches_(rows[i][0], phone)) {
             sheet.deleteRow(i + 2);
             return respond({ ok: true, row: i + 2 });
           }
@@ -2955,7 +2981,8 @@ function setPromoRecipientOptOut(data) {
       else if (phone) {
         var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
         for (var i = 0; i < rows.length; i++) {
-          if (normalizeMobileDigits_(rows[i][0]) === phone) { target = i + 2; break; }
+          // 저장값이 앞자리 0을 잃은 10자리여도 정규화·숫자 그대로 둘 다로 찾습니다.
+          if (promoRecipientPhoneMatches_(rows[i][0], phone)) { target = i + 2; break; }
         }
       }
       if (!target) return respond({ ok: false, error: '없는 수신자입니다.' });
@@ -2963,7 +2990,7 @@ function setPromoRecipientOptOut(data) {
       return respond({
         ok: true,
         row: target,
-        phone: String(sheet.getRange(target, 1).getDisplayValue() || ''),
+        phone: normalizeMobileDigits_(String(sheet.getRange(target, 1).getDisplayValue() || '')),
         optOut: optOut
       });
     } finally {
@@ -2999,7 +3026,8 @@ function updatePromoRecipient(data) {
       else if (phone) {
         var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
         for (var i = 0; i < rows.length; i++) {
-          if (normalizeMobileDigits_(rows[i][0]) === phone) { target = i + 2; break; }
+          // 저장값이 앞자리 0을 잃은 10자리여도 정규화·숫자 그대로 둘 다로 찾습니다.
+          if (promoRecipientPhoneMatches_(rows[i][0], phone)) { target = i + 2; break; }
         }
       }
       if (!target) return respond({ ok: false, error: '없는 수신자입니다.' });
@@ -3008,7 +3036,7 @@ function updatePromoRecipient(data) {
       return respond({
         ok: true,
         row: target,
-        phone: String(sheet.getRange(target, 1).getDisplayValue() || ''),
+        phone: normalizeMobileDigits_(String(sheet.getRange(target, 1).getDisplayValue() || '')),
         name: name,
         memo: memo
       });
