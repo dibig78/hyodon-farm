@@ -1289,9 +1289,9 @@ const CONFIG = {
     alertEl.hidden = true;
     const sub = $("#doneSub");
     if (result.mode === "local") {
-      sub.textContent = "지금은 주문이 자동 저장되지 않는 준비 단계입니다. 아래 ‘주문 내역 복사’로 문자를 보내주세요.";
+      sub.textContent = "주문 내용을 문자로 보내주시면 접수됩니다. 아래 ‘주문 내역 복사’를 눌러 010-2696-1326으로 보내주세요.";
       alertEl.hidden = false;
-      alertEl.innerHTML = "<strong>주문 내역을 꼭 문자로 보내주세요.</strong><br>‘주문 내역 복사’를 누른 뒤 " +
+      alertEl.innerHTML = "<strong>마지막 한 단계만 남았습니다.</strong><br>‘주문 내역 복사’를 누른 뒤 " +
         '<a href="' + CONFIG.FARM.phoneHref + '"><strong>' + CONFIG.FARM.phone + "</strong></a>으로 붙여넣어 보내주시면 접수됩니다.";
     } else if (result.ok === false) {
       sub.textContent = "주문 내용은 화면에 남아 있습니다. 자동 접수 결과를 확인하지 못해 아래 내역을 문자로 보내주시면 확실합니다.";
