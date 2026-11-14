@@ -13,6 +13,9 @@
 <meta property="og:image" content="https://dibig78.github.io/hyodon-farm/assets/hero.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8D%8A%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap">
 <link rel="preload" as="image" href="assets/hero.jpg">
 <style>
   /* =========================================================
@@ -39,6 +42,7 @@
     --radius-sm:10px;
     --radius:16px;
     --radius-lg:24px;
+    --serif:"Gowun Batang","Nanum Myeongjo","AppleMyungjo","Noto Serif KR",serif;
     --shadow-1:0 1px 2px rgba(70,50,30,.05), 0 6px 18px rgba(70,50,30,.055);
     --shadow-2:0 12px 34px rgba(70,50,30,.16);
     /* layout */
@@ -83,7 +87,7 @@
     display:inline-block; font-size:12px; font-weight:800; letter-spacing:.14em;
     color:var(--orange); text-transform:uppercase; margin-bottom:10px;
   }
-  h2{font-size:clamp(23px,3.4vw,34px); line-height:1.3; letter-spacing:-.03em; font-weight:800}
+  h2{font-family:var(--serif); font-size:clamp(23px,3.4vw,34px); line-height:1.34; letter-spacing:-.02em; font-weight:700}
   .lead{color:var(--muted); margin-top:12px; font-size:15.5px; line-height:1.7; max-width:46em}
   .section-head{max-width:640px}
 
@@ -133,7 +137,7 @@
   }
   .brand{display:flex; align-items:center; gap:9px; min-height:44px}
   .brand__mark{font-size:22px; line-height:1}
-  .brand__text strong{display:block; font-size:16.5px; letter-spacing:-.02em; line-height:1.2; font-weight:800}
+  .brand__text strong{display:block; font-family:var(--serif); font-size:17px; letter-spacing:0; line-height:1.2; font-weight:700}
   .brand__text em{display:block; font-style:normal; font-size:11.5px; color:var(--muted); letter-spacing:.02em; margin-top:1px}
   .topbar__nav{display:flex; align-items:center; gap:2px; font-size:14.5px; font-weight:600}
   .topbar__nav a{display:inline-flex; align-items:center; min-height:44px; padding:0 12px; border-radius:999px; color:var(--ink-soft)}
@@ -167,7 +171,8 @@
     padding:6px 12px; border-radius:999px; margin-bottom:16px; backdrop-filter:blur(3px);
   }
   .hero h1{
-    font-size:clamp(30px,5.4vw,56px); line-height:1.18; letter-spacing:-.04em; font-weight:800;
+    font-family:var(--serif);
+    font-size:clamp(31px,5.4vw,58px); line-height:1.26; letter-spacing:-.025em; font-weight:700;
     text-shadow:0 2px 24px rgba(0,0,0,.28); max-width:16em;
   }
   .hero__desc{
@@ -184,8 +189,16 @@
   .hero__actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:24px}
 
   /* ---------- trust strip ---------- */
-  .trust{background:var(--surface-alt); border-bottom:1px solid var(--line)}
-  .trust__list{display:grid; grid-template-columns:repeat(3,1fr)}
+  .trust{position:relative; z-index:3; margin-top:-26px; padding-inline:var(--gutter); background:transparent; border:0}
+  .trust__list{
+    max-width:700px; display:grid; grid-template-columns:repeat(3,1fr);
+    background:var(--surface); border:1px solid var(--line); border-radius:16px;
+    box-shadow:0 16px 38px rgba(40,25,12,.16); overflow:hidden;
+  }
+  @media (max-width:767px){
+    .trust{margin-top:0; padding-inline:0}
+    .trust__list{max-width:none; border-radius:0; border-left:0; border-right:0; box-shadow:none; background:var(--surface-alt)}
+  }
   .trust__list li{
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
     padding:12px 6px; font-size:12px; font-weight:600; color:var(--ink-soft);
@@ -239,14 +252,20 @@
     transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;
   }
   .product.is-selected{border-color:var(--orange); background:#fffaf6; box-shadow:0 8px 24px rgba(217,85,31,.14)}
-  .product__thumb{width:96px; height:96px; border-radius:12px; overflow:hidden; background:#f3e7d8; align-self:start}
+  .product__thumb{position:relative; width:96px; height:96px; border-radius:12px; overflow:hidden; background:#f3e7d8; align-self:start}
   .product__thumb img{width:100%; height:100%; object-fit:cover; display:block}
   .product__body{min-width:0; display:flex; flex-direction:column; gap:2px}
+  .product__tags{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:7px}
+  .product__badge{
+    font-size:11px; font-weight:800; letter-spacing:.02em; color:#fff; background:var(--orange);
+    padding:3px 9px; border-radius:999px; box-shadow:0 4px 12px rgba(217,85,31,.3);
+  }
   .product__tag{
     align-self:flex-start; font-size:11.5px; font-weight:800; letter-spacing:.02em;
     color:var(--green); background:var(--green-soft); padding:3px 9px; border-radius:999px;
-    margin-bottom:6px;
   }
+  .product__pricebox{display:flex; flex-direction:column; gap:1px; min-width:0}
+  .product__unit{font-size:11.5px; color:var(--muted); font-weight:600; letter-spacing:0}
   .product__name{font-size:17px; font-weight:800; letter-spacing:-.025em; line-height:1.35}
   .product__desc{
     font-size:13.5px; color:var(--muted); margin-top:6px; line-height:1.6;
@@ -491,6 +510,38 @@
   .toast.is-visible{opacity:1; transform:translate(-50%,0)}
 
   body.has-sticky{padding-bottom:92px}
+
+  /* ---------- final cta band ---------- */
+  .cta-band{
+    position:relative; overflow:hidden;
+    background:linear-gradient(150deg,#241a12 0%,#3d2b1b 62%,#51381f 100%);
+    color:#fdf6ec; padding-block:clamp(44px,6vw,76px);
+  }
+  .cta-band::after{
+    content:""; position:absolute; right:-60px; top:-40px; width:340px; height:340px;
+    background:radial-gradient(circle,rgba(217,85,31,.3),transparent 68%); pointer-events:none;
+  }
+  .cta-band__inner{position:relative; display:flex; flex-direction:column; gap:var(--s5)}
+  @media (min-width:860px){ .cta-band__inner{flex-direction:row; align-items:center; justify-content:space-between; gap:var(--s7)} }
+  .cta-band .eyebrow{color:#f2a980}
+  .cta-band h2{color:#fff; font-size:clamp(23px,3.2vw,34px)}
+  .cta-band .lead{color:#cfbca9; margin-top:10px}
+  .cta-band__actions{display:flex; gap:10px; flex-wrap:wrap}
+  @media (max-width:560px){ .cta-band__actions .btn{width:100%} }
+
+  /* ---------- motion & micro-interactions ---------- */
+  ::selection{background:rgba(217,85,31,.22)}
+  @media (hover:hover){
+    .product{transition:border-color .16s ease, box-shadow .2s ease, background .16s ease, transform .2s ease}
+    .product:hover{transform:translateY(-2px); box-shadow:0 14px 30px rgba(70,50,30,.1)}
+    .gallery figure{overflow:hidden}
+    .gallery figure img{transition:transform .5s ease}
+    .gallery figure:hover img{transform:scale(1.035)}
+    .feature{transition:border-color .16s ease, transform .2s ease}
+    .feature:hover{transform:translateY(-2px)}
+  }
+  .reveal{opacity:0; transform:translateY(16px); transition:opacity .55s ease, transform .55s cubic-bezier(.2,.7,.3,1)}
+  .reveal.is-in{opacity:1; transform:none}
 
   @media (prefers-reduced-motion:reduce){
     html{scroll-behavior:auto}
@@ -798,6 +849,20 @@
   </section>
 </main>
 
+<section class="cta-band" aria-labelledby="cta-title">
+  <div class="wrap cta-band__inner">
+    <div>
+      <p class="eyebrow">Order today</p>
+      <h2 id="cta-title">오늘 수확한 귤, 오늘 보내드립니다</h2>
+      <p class="lead">노지감귤 10kg 21,000원부터 · 로젠택배비 포함 · 문자 한 통이면 주문 끝</p>
+    </div>
+    <div class="cta-band__actions">
+      <a class="btn btn--primary btn--lg" href="#products">상품 보고 주문하기</a>
+      <a class="btn btn--ghost btn--lg" href="tel:01026961326">010-2696-1326</a>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap footer__grid">
     <div class="footer__brand">
@@ -865,6 +930,7 @@ const CONFIG = {
       id: "mandarin-home",
       name: "노지감귤 가정용 10kg",
       tag: "가정용",
+      badge: "가장 많이 찾는",
       desc: "알이 고르고 맛 좋은 노지감귤을 넉넉하게. 크기와 모양이 조금씩 달라도 맛은 그대로입니다.",
       weight: "10kg",
       price: 21000,
@@ -892,6 +958,7 @@ const CONFIG = {
       id: "golden-gift",
       name: "황금향 선물용 5kg",
       tag: "선물용",
+      badge: "선물 추천",
       desc: "선물하기 좋은 황금향만 골라 담은 5kg. 향과 단맛이 진한 제주 황금향입니다.",
       weight: "5kg",
       price: 30000,
@@ -920,17 +987,29 @@ const CONFIG = {
   };
 
   /* ---------- 상품 목록 ---------- */
+  function unitPrice(p) {
+    const kg = parseFloat(String(p.weight).replace(/[^0-9.]/g, ""));
+    if (!kg) return "";
+    return Math.round(p.price / kg).toLocaleString("ko-KR") + "원/kg";
+  }
+
   function renderProducts() {
     const list = $("#productList");
     list.innerHTML = CONFIG.PRODUCTS.map((p) => `
       <li class="product" data-id="${p.id}">
         <div class="product__thumb"><img src="${p.image}" alt="${p.name}" loading="lazy" width="640" height="400" decoding="async"></div>
         <div class="product__body">
-          <span class="product__tag">${p.tag} · ${p.weight}</span>
+          <div class="product__tags">
+            ${p.badge ? `<span class="product__badge">${p.badge}</span>` : ""}
+            <span class="product__tag">${p.tag} · ${p.weight}</span>
+          </div>
           <h3 class="product__name">${p.name}</h3>
           <p class="product__desc">${p.desc}</p>
           <div class="product__foot">
-            <span class="product__price">${won(p.price)}<small>/ 박스</small></span>
+            <div class="product__pricebox">
+              <span class="product__price">${won(p.price)}</span>
+              <span class="product__unit">1박스(${p.weight}) · ${unitPrice(p)}</span>
+            </div>
             <div class="stepper" role="group" aria-label="${p.name} 수량">
               <button type="button" class="js-minus" aria-label="${p.name} 수량 줄이기" disabled>−</button>
               <output class="js-qty" aria-live="polite">0</output>
@@ -1354,9 +1433,29 @@ const CONFIG = {
     });
   }
 
+  /* ---------- 스크롤 등장 ---------- */
+  function initReveal() {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!("IntersectionObserver" in window)) return;
+    const targets = $$(".section-head, .feature, .product, .step, .gallery figure, .cta-band__inner > *");
+    targets.forEach((el) => el.classList.add("reveal"));
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting) { en.target.classList.add("is-in"); io.unobserve(en.target); }
+      });
+    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.05 });
+    targets.forEach((el) => io.observe(el));
+    requestAnimationFrame(() => {
+      targets.forEach((el) => {
+        if (el.getBoundingClientRect().top < window.innerHeight) el.classList.add("is-in");
+      });
+    });
+  }
+
   function init() {
     renderProducts();
     bind();
+    initReveal();
     $("#setupNotice").hidden = Boolean(String(CONFIG.APPS_SCRIPT_URL || "").trim());
     updateTotals();
   }
