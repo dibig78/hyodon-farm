@@ -14,6 +14,13 @@
  *      홈페이지가 ?action=photos 로 슬롯별 URL을 읽고, 관리자가
  *      action=uploadPhoto / deletePhoto 로 사진을 바꾸거나 되돌립니다.
  *      아래 '홈페이지 사진 관리' 절을 보세요.
+ *   6) 상품 관리: 상품설정 탭. 홈페이지가 ?action=products 로 노출 중인
+ *      상품 목록을 읽고, 관리자가 action=upsertProduct / setProductActive 로
+ *      상품을 추가·수정·노출 중단합니다. 주문이 들어오면 카탈로그 가격으로
+ *      금액을 서버에서 다시 계산합니다 (탭이 비어 있으면 클라이언트 금액 유지).
+ *      아래 '상품 관리' 절을 보세요.
+ *   7) 새 주문 문자 알림 (Textbee): 주문이 접수되면 농원 전화번호로 문자 1건.
+ *      키가 비어 있으면 건너뜁니다. 아래 '문자 알림' 절을 보세요.
  *
  * 설치 방법은 같은 저장소의 apps-script/README.md 를 보세요.
  * ------------------------------------------------------------
@@ -33,6 +40,18 @@ var TIMEZONE = 'Asia/Seoul';
  * 비워 두면 메일을 보내지 않습니다. (처음 한 번 권한 승인이 필요합니다.)
  */
 var NOTIFY_EMAIL = '';
+
+/**
+ * Textbee API 키 — 문자 발송용 안드로이드 기기와 연결된 키입니다.
+ * GitHub 저장소에는 빈칸으로 두고, Apps Script 편집기에서만 입력하세요.
+ * 키 발급: https://textbee.dev 에서 계정 만들고 API 키 발급,
+ * 발송용 안드로이드 폰에 Textbee 앱을 설치해 같은 계정으로 로그인합니다.
+ * 키가 비어 있으면 문자 알림은 조용히 건너뛰고 주문은 정상 접수됩니다.
+ */
+var TEXTBEE_API_KEY = '';
+
+/** 새 주문 알림 문자를 받을 농원 전화번호 (편집기에서 바꾸면 됩니다). */
+var NOTIFY_PHONE = '010-2696-1326';
 
 /**
  * 관리자 전용 기능(주문 목록·입금확인·송장번호)을 쓸 본인 Gmail 주소.
@@ -79,6 +98,13 @@ function doPost(e) {
     if (data.action === 'uploadPhoto') return uploadPhoto(data);
     if (data.action === 'deletePhoto') return deletePhoto(data);
 
+    // 새 주문 문자 알림 테스트 (admin.html에서 호출, 키 확인은 testNotify 안에서)
+    if (data.action === 'testNotify') return testNotify(data);
+
+    // 상품 관리 (admin.html 상품 관리에서 보낸 요청)
+    if (data.action === 'upsertProduct') return upsertProduct(data);
+    if (data.action === 'setProductActive') return setProductActive(data);
+
     // 필수값 확인 (홈페이지에서도 검사하지만 마지막으로 한 번 더)
     var missing = [];
     if (!data.ordererName) missing.push('주문자');
@@ -89,6 +115,11 @@ function doPost(e) {
     if (!data.depositor) missing.push('입금자명');
     if (!data.items || !data.items.length) missing.push('상품');
     if (missing.length) return respond({ ok: false, error: '필수값 누락: ' + missing.join(', ') });
+
+    // 상품 가격을 서버에서 다시 계산합니다 (상품설정 탭이 있을 때만).
+    // 탭에 없는 상품이 섞여 있으면 클라이언트가 보낸 금액을 그대로 씁니다.
+    // 다시 계산했으면 내역도 카탈로그 이름·가격으로 바꿔 응답에 담습니다.
+    var repricedItems = repriceOrder_(data);
 
     var sheet = getSheet();
     ensureHeader(sheet);
@@ -129,8 +160,14 @@ function doPost(e) {
     }
 
     notify(data, productText);
+    notifyNewOrder_(data, productText);
 
-    return respond({ ok: true, row: rowIndex });
+    return respond({
+      ok: true,
+      row: rowIndex,
+      totalAmount: Number(data.totalAmount || 0),
+      items: repricedItems || data.items
+    });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
@@ -146,6 +183,10 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'track') return trackGet(e.parameter.phone);
   // 홈페이지 사진 설정 조회 (index.html에서 ?action=photos 로 호출, 키 없음)
   if (e && e.parameter && e.parameter.action === 'photos') return photosGet();
+  // 상품 목록 조회 (index.html에서 ?action=products 로 호출, 키 없음)
+  if (e && e.parameter && e.parameter.action === 'products') return productsGet();
+  // 상품 전체 목록 조회 (admin.html 상품 관리에서 호출, 키 확인)
+  if (e && e.parameter && e.parameter.action === 'productsAll') return productsAll(e.parameter.key);
   var status = 'ok';
   var message = '효돈농원 주문 접수 서비스가 동작 중입니다.';
   try {
@@ -321,8 +362,10 @@ var PHOTOS_HEADERS = ['key', 'driveFileId', 'url', 'updatedAt'];
 var PHOTO_FOLDER_NAME = '효돈농원 홈페이지 사진';
 /** 파일 크기 상한 (브라우저 축소 후 기준) */
 var PHOTO_MAX_BYTES = 5 * 1024 * 1024;
-/** 사진 슬롯 키 — hero, 상품 4종 (홈페이지·관리자 양쪽과 같은 순서) */
-var PHOTO_KEYS = ['hero', 'product-home', 'product-gift', 'product-mixed', 'product-golden-gift'];
+/** 사진 슬롯 키 — hero, 상품 4종, 농장 갤러리 6장.
+ *  isValidPhotoSlotKey가 이 목록에 있는 키를 받습니다.
+ *  (상품 id는 상품설정 탭에 있을 때만 받고, 이 목록에는 안 넣습니다.) */
+var PHOTO_KEYS = ['hero', 'product-home', 'product-gift', 'product-mixed', 'product-golden-gift', 'gallery-1', 'gallery-2', 'gallery-3', 'gallery-4', 'gallery-5', 'gallery-6'];
 
 /** 사진설정 탭을 가져옵니다. 없으면 헤더와 함께 만듭니다. */
 function getPhotosSheet() {
@@ -380,6 +423,19 @@ function upsertPhoto(slot, fileId, url) {
   sheet.appendRow([slot, fileId, url, stamp]);
 }
 
+/** 사진설정 탭에서 해당 키의 행을 지웁니다. 없으면 아무것도 하지 않습니다. */
+function deletePhotoRowIn_(sheet, key) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  var keys = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+  for (var i = 0; i < keys.length; i++) {
+    if (String(keys[i][0] || '').trim() === key) {
+      sheet.deleteRow(i + 2);
+      return;
+    }
+  }
+}
+
 /**
  * 사진 업로드 (관리자 전용)
  * body: { action: 'uploadPhoto', key: 관리자 키, slot: 사진 슬롯,
@@ -391,7 +447,7 @@ function uploadPhoto(data) {
   try {
     checkAdmin(data && data.key);
     var slot = String((data && data.slot) || '').trim();
-    if (PHOTO_KEYS.indexOf(slot) < 0) {
+    if (!isValidPhotoSlotKey(slot)) {
       return respond({ ok: false, error: '알 수 없는 사진 슬롯입니다: ' + slot });
     }
     var b64 = String((data && data.base64) || '').replace(/^data:[^,]*,/, '').replace(/\s/g, '');
@@ -417,6 +473,11 @@ function uploadPhoto(data) {
       fileId = file.getId();
       url = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
       upsertPhoto(slot, fileId, url);
+      // 상품 id로 사진을 올리면, 같은 상품의 옛 슬롯 행(product-home 등)이
+      // 남아 있을 수 있으니 지웁니다. 홈페이지가 새 키를 먼저 보기 때문에
+      // 옛 행은 더 이상 쓰이지 않습니다.
+      var legacyUp = LEGACY_PHOTO_KEYS[slot];
+      if (legacyUp) deletePhotoRowIn_(getPhotosSheet(), legacyUp);
     } finally {
       lock.releaseLock();
     }
@@ -435,21 +496,380 @@ function deletePhoto(data) {
   try {
     checkAdmin(data && data.key);
     var slot = String((data && data.slot) || '').trim();
-    if (PHOTO_KEYS.indexOf(slot) < 0) {
+    if (!isValidPhotoSlotKey(slot)) {
       return respond({ ok: false, error: '알 수 없는 사진 슬롯입니다: ' + slot });
     }
     var sheet = getPhotosSheet();
-    var lastRow = sheet.getLastRow();
-    if (lastRow >= 2) {
-      var keys = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
-      for (var i = 0; i < keys.length; i++) {
-        if (String(keys[i][0] || '').trim() === slot) {
-          sheet.deleteRow(i + 2);
-          return respond({ ok: true, slot: slot });
+    deletePhotoRowIn_(sheet, slot);
+    // 상품 id로 되돌리면 같은 상품의 옛 슬롯 행도 함께 지웁니다.
+    var legacyDel = LEGACY_PHOTO_KEYS[slot];
+    if (legacyDel) deletePhotoRowIn_(sheet, legacyDel);
+    return respond({ ok: true, slot: slot });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/* ============================================================
+ *  상품 관리 (상품설정 탭)
+ *  - 관리자가 admin.html '상품 관리'에서 상품을 추가·수정·노출 중단하면
+ *    상품설정 탭에 저장합니다. 홈페이지(index.html)는 배포 1
+ *    ?action=products 로 노출 중인 상품만 읽어 상품 그리드를 그립니다.
+ *  - 탭이 비어 있으면 홈페이지는 하드코드된 기본 4종을 그대로 씁니다.
+ *    그래서 관리자가 처음 상품을 고칠 때, 빈 탭에 기본 4종을 먼저
+ *    심어 둡니다 (ensureCatalogSeeded_). 기본 4종이 탭에 들어간 뒤에는
+ *    탭이 기준이 됩니다. 기본 4종 내용은 React의 config.ts와 같습니다.
+ *  - 주문이 들어오면 카탈로그 가격 × 수량으로 금액을 서버에서 다시
+ *    계산합니다 (repriceOrder_). 탭이 비어 있거나 탭에 없는 상품이
+ *    섞여 있으면 클라이언트가 보낸 금액을 그대로 씁니다.
+ *  - 상품 추가·수정·노출 변경은 관리자 전용(checkAdmin)입니다.
+ *  - 사진 슬롯 키는 상품 id 기준입니다 ('hero' 제외). 옛 슬롯 키
+ *    (product-home 등)는 홈페이지가 읽을 때만 폴백으로 봅니다.
+ *    상품 id의 유효성은 isValidPhotoSlotKey가 함께 확인합니다.
+ * ============================================================ */
+/** 상품설정 탭 이름 (열: id, name, price, unit, imageKey, active, sortOrder, description) */
+var PRODUCTS_SHEET_NAME = '상품설정';
+var PRODUCTS_HEADERS = ['id', 'name', 'price', 'unit', 'imageKey', 'active', 'sortOrder', 'description'];
+/** 기본 4종 id — 상품설정 탭이 비어 있을 때의 폴백 (config.ts와 같은 값) */
+var FALLBACK_PRODUCT_IDS = ['mandarin-home', 'mandarin-gift', 'golden-mix', 'golden-gift'];
+/** 기본 4종 내용 (탭이 비어 있을 때 처음 수정하는 경우 탭에 심어 둡니다) */
+var FALLBACK_PRODUCTS = [
+  { id: 'mandarin-home', name: '노지감귤 가정용 10kg', price: 21000, unit: '10kg', description: '10kg 한 상자. 크기와 모양이 조금씩 다릅니다. 가정에서 먹기 좋은 노지감귤입니다.' },
+  { id: 'mandarin-gift', name: '노지감귤 선물용 10kg', price: 38000, unit: '10kg', description: '10kg 한 상자. 크기가 고른 것만 골라 담았습니다. 선물용 박스 포장입니다.' },
+  { id: 'golden-mix', name: '황금향 혼합 5kg', price: 25000, unit: '5kg', description: '크고 작은 황금향을 함께 담았습니다. 껍질이 얇고 과즙이 많은 황금향을 집에서 편하게.' },
+  { id: 'golden-gift', name: '황금향 선물용 5kg', price: 30000, unit: '5kg', description: '선물하기 좋은 황금향만 골라 담은 5kg. 향과 단맛이 진한 제주 황금향입니다.' }
+];
+/** 옛 사진 슬롯 키 (상품 id → 옛 키). 사진 읽을 때만 폴백으로 봅니다. */
+var LEGACY_PHOTO_KEYS = {
+  'mandarin-home': 'product-home',
+  'mandarin-gift': 'product-gift',
+  'golden-mix': 'product-mixed',
+  'golden-gift': 'product-golden-gift'
+};
+
+/** 상품설정 탭을 가져옵니다. 없으면 헤더와 함께 만듭니다. */
+function getProductsSheet() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(PRODUCTS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(PRODUCTS_SHEET_NAME);
+    sheet.getRange(1, 1, 1, PRODUCTS_HEADERS.length).setValues([PRODUCTS_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** 상품설정 탭의 모든 행을 읽어 상품 배열로 돌려줍니다 (노출 중단 포함). */
+function readProducts_() {
+  var sheet = getProductsSheet();
+  var lastRow = sheet.getLastRow();
+  var out = [];
+  if (lastRow < 2) return out;
+  var values = sheet.getRange(2, 1, lastRow - 1, PRODUCTS_HEADERS.length).getDisplayValues();
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    var id = String(r[0] || '').trim();
+    if (!id) continue;
+    var activeRaw = String(r[5] == null ? '' : r[5]).trim().toLowerCase();
+    out.push({
+      id: id,
+      name: String(r[1] || '').trim(),
+      price: Number(String(r[2] || '0').replace(/[^0-9]/g, '') || 0),
+      unit: String(r[3] || '').trim(),
+      imageKey: String(r[4] || '').trim() || id,
+      active: activeRaw === '' || activeRaw === 'true',
+      sortOrder: Number(String(r[6] || '0').replace(/[^0-9]/g, '') || 0),
+      description: String(r[7] || '')
+    });
+  }
+  return out;
+}
+
+/** 상품설정 탭의 id만 읽습니다 (탭이 없으면 만들지 않습니다). */
+function getCatalogIds_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(PRODUCTS_SHEET_NAME);
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var values = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+  var ids = [];
+  for (var i = 0; i < values.length; i++) {
+    var id = String(values[i][0] || '').trim();
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+/** 상품설정 탭을 sortOrder 순으로 정렬합니다 (번호가 같으면 시트 순서). */
+function sortProducts_(rows) {
+  return rows.slice().sort(function (a, b) {
+    var d = (a.sortOrder || 0) - (b.sortOrder || 0);
+    return d !== 0 ? d : 0;
+  });
+}
+
+/**
+ * 사진 슬롯 키가 유효한지 확인합니다.
+ * 'hero'와 옛 슬롯 키(product-home 등)는 그대로 받고, 상품 id는
+ * 상품설정 탭에 있을 때만 받습니다. 탭이 비어 있으면 기본 4종 id만 받습니다.
+ * 상품이 추가되면 그 상품 id로 사진을 올릴 수 있게 됩니다.
+ */
+function isValidPhotoSlotKey(slot) {
+  if (slot === 'hero') return true;
+  if (PHOTO_KEYS.indexOf(slot) >= 0) return true;
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(slot) || slot.length > 64) return false;
+  var ids = getCatalogIds_();
+  if (ids.length) return ids.indexOf(slot) >= 0;
+  return FALLBACK_PRODUCT_IDS.indexOf(slot) >= 0;
+}
+
+/** 노출 중인 상품 목록 (공개 읽기, 키 없음) — 탭이 비어 있으면 빈 배열입니다. */
+function productsGet() {
+  try {
+    var rows = sortProducts_(readProducts_());
+    var products = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].active) products.push(rows[i]);
+    }
+    return respond({ ok: true, products: products });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 상품 전체 목록 (관리자 전용) — 노출 중단된 상품도 포함합니다. */
+function productsAll(key) {
+  try {
+    checkAdmin(key);
+    var rows = sortProducts_(readProducts_());
+    return respond({ ok: true, products: rows });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 상품설정 탭이 비어 있으면 기본 4종을 먼저 심어 둡니다. */
+function ensureCatalogSeeded_() {
+  var sheet = getProductsSheet();
+  if (sheet.getLastRow() >= 2) return;
+  for (var i = 0; i < FALLBACK_PRODUCTS.length; i++) {
+    var p = FALLBACK_PRODUCTS[i];
+    sheet.appendRow([p.id, p.name, p.price, p.unit, p.id, true, i + 1, p.description]);
+  }
+  sheet.getRange(2, 3, FALLBACK_PRODUCTS.length, 1).setNumberFormat('#,##0');
+}
+
+/**
+ * 상품 추가·수정 (관리자 전용)
+ * body: { action: 'upsertProduct', key: 관리자 키, id?: 상품 id (없으면 새로 만듦),
+ *         name, price, unit, description }
+ * price는 0보다 큰 정수만 허용합니다 (1원 ~ 1,000만원).
+ * id가 없으면 'product-<timestamp>'로 만들고, imageKey는 id와 같게 합니다.
+ * 이미지 키는 사진 슬롯 키와 같습니다 (상품 id 기준).
+ */
+function upsertProduct(data) {
+  try {
+    checkAdmin(data && data.key);
+    var name = String((data && data.name) || '').trim();
+    if (!name) return respond({ ok: false, error: '상품 이름을 입력하세요.' });
+    if (name.length > 100) return respond({ ok: false, error: '상품 이름이 너무 깁니다.' });
+    var price = Number(String(data && data.price != null ? data.price : '').replace(/[^0-9]/g, '') || 0);
+    if (!price || price <= 0 || price > 10000000) {
+      return respond({ ok: false, error: '가격은 1원 이상 1,000만원 이하의 숫자여야 합니다.' });
+    }
+    var unit = String((data && data.unit) || '').trim();
+    if (!unit) return respond({ ok: false, error: '단위를 입력하세요. (예: 10kg)' });
+    if (unit.length > 30) return respond({ ok: false, error: '단위가 너무 깁니다.' });
+    var description = String((data && data.description) || '').slice(0, 500);
+    var id = String((data && data.id) || '').trim();
+    if (id && !/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+      return respond({ ok: false, error: '상품 id 형식이 올바르지 않습니다.' });
+    }
+    var sheet = getProductsSheet();
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      ensureCatalogSeeded_();
+      var lastRow = sheet.getLastRow();
+      var targetRow = 0;
+      var maxOrder = 0;
+      if (lastRow >= 2) {
+        var values = sheet.getRange(2, 1, lastRow - 1, 7).getDisplayValues();
+        for (var i = 0; i < values.length; i++) {
+          var rowId = String(values[i][0] || '').trim();
+          var ord = Number(String(values[i][6] || '0').replace(/[^0-9]/g, '') || 0);
+          if (ord > maxOrder) maxOrder = ord;
+          if (id && rowId === id) targetRow = i + 2;
         }
       }
+      if (targetRow) {
+        // 기존 상품 수정 — 노출 여부·순서·이미지 키는 그대로 둡니다.
+        sheet.getRange(targetRow, 2, 1, 3).setValues([[safe(name), price, safe(unit)]]);
+        sheet.getRange(targetRow, 8).setValue(safe(description));
+        sheet.getRange(targetRow, 3).setNumberFormat('#,##0');
+        var after = readProducts_();
+        for (var j = 0; j < after.length; j++) {
+          if (after[j].id === id) return respond({ ok: true, product: after[j] });
+        }
+        return respond({ ok: false, error: '저장은 됐지만 상품을 다시 읽지 못했습니다.' });
+      }
+      if (!id) id = 'product-' + new Date().getTime();
+      var imageKey = String((data && data.imageKey) || '').trim() || id;
+      sheet.appendRow([id, safe(name), price, safe(unit), safe(imageKey), true, maxOrder + 1, safe(description)]);
+      sheet.getRange(sheet.getLastRow(), 3).setNumberFormat('#,##0');
+      var created = readProducts_();
+      for (var k = 0; k < created.length; k++) {
+        if (created[k].id === id) return respond({ ok: true, product: created[k] });
+      }
+      return respond({ ok: false, error: '저장은 됐지만 상품을 다시 읽지 못했습니다.' });
+    } finally {
+      lock.releaseLock();
     }
-    return respond({ ok: true, slot: slot });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 상품 노출·중단 (관리자 전용) — "삭제"는 노출 중단으로 처리합니다.
+ * 완전 삭제는 하지 않습니다. 기존 주문 내역과 무관하게 안전합니다.
+ * body: { action: 'setProductActive', key: 관리자 키, id, active }
+ */
+function setProductActive(data) {
+  try {
+    checkAdmin(data && data.key);
+    var id = String((data && data.id) || '').trim();
+    if (!id) return respond({ ok: false, error: '상품 id가 없습니다.' });
+    var active = !!data.active;
+    var sheet = getProductsSheet();
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      ensureCatalogSeeded_();
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var values = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+        for (var i = 0; i < values.length; i++) {
+          if (String(values[i][0] || '').trim() === id) {
+            sheet.getRange(i + 2, 6).setValue(active);
+            return respond({ ok: true, id: id, active: active });
+          }
+        }
+      }
+      return respond({ ok: false, error: '없는 상품입니다: ' + id });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 주문 금액을 카탈로그 가격으로 다시 계산합니다.
+ * 상품설정 탭이 비어 있으면 false를 돌려줘 클라이언트 금액을 유지합니다.
+ * 탭에 없는 상품이 하나라도 섞여 있으면 전체를 클라이언트 금액으로 둡니다
+ * (일부만 다시 계산하면 내역과 합계가 어긋나기 때문입니다).
+ * 성공하면 data.totalAmount와 data.productSummary를 갱신하고,
+ * 카탈로그 기준 내역을 배열로 돌려줍니다.
+ */
+function repriceOrder_(data) {
+  var rows = readProducts_();
+  if (!rows.length) return null;
+  var byId = {};
+  for (var i = 0; i < rows.length; i++) byId[rows[i].id] = rows[i];
+  var items = data.items || [];
+  var total = 0;
+  var repriced = [];
+  for (var j = 0; j < items.length; j++) {
+    var it = items[j] || {};
+    var catalog = byId[it.id];
+    if (!catalog) return null;
+    var qty = Number(it.qty || 0);
+    var amount = catalog.price * qty;
+    total += amount;
+    repriced.push({ id: it.id, name: catalog.name, qty: qty, price: catalog.price, amount: amount });
+  }
+  data.totalAmount = total;
+  data.productSummary = repriced.map(function (r) {
+    return r.name + ' ' + r.qty + '박스';
+  }).join(', ');
+  return repriced;
+}
+
+/* ============================================================
+ *  문자 알림 (Textbee) — 새 주문 시 농원에 문자 1건
+ * ============================================================ */
+
+/** Textbee 수신자 번호 형식으로 바꿉니다 (01012345678 -> +821012345678). */
+function formatPhoneForTextbee_(phone) {
+  var digits = String(phone || '').replace(/[^0-9]/g, '');
+  if (!digits) return '';
+  if (digits.indexOf('82') === 0 && digits.length > 10) return '+' + digits;
+  if (digits.charAt(0) === '0') return '+82' + digits.substring(1);
+  return '+82' + digits;
+}
+
+/** Textbee로 문자 1건을 보냅니다. 성공하면 true, 실패하면 false를 반환합니다. */
+function sendSmsViaTextbee_(phone, message) {
+  if (!TEXTBEE_API_KEY) return false;
+  var to = formatPhoneForTextbee_(phone);
+  if (!to || !message) return false;
+  try {
+    var options = {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-api-key': TEXTBEE_API_KEY },
+      payload: JSON.stringify({ recipients: [to], message: message }),
+      muteHttpExceptions: true
+    };
+    var res = UrlFetchApp.fetch('https://api.textbee.dev/api/v1/gateway/send-sms', options);
+    var code = res.getResponseCode();
+    if (code >= 200 && code < 300) return true;
+    Logger.log('Textbee send failed: HTTP ' + code + ' ' + res.getContentText());
+    return false;
+  } catch (err) {
+    Logger.log('Textbee send error: ' + err);
+    return false;
+  }
+}
+
+/**
+ * 새 주문이 들어오면 농원에 문자 1건을 보냅니다.
+ * 메시지 예시:
+ *   [효돈농원] 새 주문: 노지감귤 가정용 10kg 1박스 21,000원,
+ *   테스트E 010-7777-9999 (입금자명: 테스트E)
+ * 실패해도 주문 접수는 절대 막지 않습니다 (내부 try/catch + 키 없음 시 skip).
+ */
+function notifyNewOrder_(data, productText) {
+  try {
+    if (!TEXTBEE_API_KEY) return;
+    var amount = Number(data.totalAmount || 0).toLocaleString();
+    var message = '[효돈농원] 새 주문: ' + productText + ' ' + amount + '원, ' +
+      data.ordererName + ' ' + data.ordererPhone +
+      ' (입금자명: ' + data.depositor + ')';
+    sendSmsViaTextbee_(NOTIFY_PHONE, message);
+  } catch (err) {
+    // 문자 실패가 주문 접수를 막지 않게 합니다.
+    Logger.log('notifyNewOrder_ failed: ' + err);
+  }
+}
+
+/**
+ * 관리자 테스트용 (POST action=testNotify, 배포 2, checkAdmin 필수).
+ * "[효돈농원] 문자 알림 테스트입니다."를 NOTIFY_PHONE으로 보냅니다.
+ * 키가 비어 있으면 에러를 반환합니다.
+ */
+function testNotify(data) {
+  checkAdmin(data && data.key);
+  if (!TEXTBEE_API_KEY) {
+    return respond({ ok: false, error: 'Textbee API 키를 먼저 입력하세요. (Code.gs의 TEXTBEE_API_KEY)' });
+  }
+  try {
+    var ok = sendSmsViaTextbee_(NOTIFY_PHONE, '[효돈농원] 문자 알림 테스트입니다.');
+    if (ok) return respond({ ok: true });
+    return respond({ ok: false, error: '문자 발송에 실패했습니다. Textbee 앱이 켜져 있는지 확인하세요.' });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
