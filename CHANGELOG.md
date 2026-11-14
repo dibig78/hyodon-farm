@@ -42,7 +42,7 @@
 - 편집기 사진 코드 + 배포 1 v11·배포 2 v12 재배포 완료 (2026-11-14 20:22–20:24).
 - 상품·갤러리 편집기 추가 + 배포 1 v13·배포 2 v14 재배포 완료 (2026-11-14 20:39, ?action=photos·?action=products 확인).
 - 문자(SMS Gateway Cloud) 편집기 추가 + 배포 1 v15·배포 2 v16 재배포 완료 (2026-11-14 20:44, ?action=photos·?action=products 확인). 문자 코드 기준본 커밋 5bf75ee "Apps Script: 문자 알림을 Textbee에서 android-sms-gateway Cloud로 교체" (2026-11-14 20:31, 검수 45/45).
-- React dist 라이브 반영 (사진·상품·문자·갤러리·디자인 수정 포함) — 아래 커밋 참조.
+- React dist 라이브 반영 — GitHub main 커밋 892da58 "React dist: 사진·상품·문자(SMS Gateway)·갤러리·디자인 수정 라이브 반영" (2026-11-14 20:44). 사진·상품·문자·갤러리·디자인 수정 포함.
 
 ## 2026-11-14 — 관리자 페이지 v2
 
