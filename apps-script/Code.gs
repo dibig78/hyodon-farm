@@ -27,6 +27,11 @@
  *      4건씩 60초 간격으로 천천히 보냅니다. 하루 최대 100건(성공
  *      건수 기준). 1건 테스트 발송만 즉시 보냅니다. 발송 기록은
  *      '문자발송기록' 탭에 남습니다. 아래 '홍보 문자 발송' 절을 보세요.
+ *   9) 홍보문구 버전 저장·홍보수신자 목록: '홍보문구버전'·'홍보수신자' 탭.
+ *      수신자 목록은 '문자발송큐'에서 전화번호별 최근 발송을 찾아 함께 돌려주고,
+ *      이름·메모는 인라인 편집(updatePromoRecipient)으로 고칩니다.
+ *      예약할 때 목록에서 고른 번호로 보낼 수 있고, 수신거부된 번호는
+ *      예약·테스트 발송에서 자동으로 걸러집니다.
  *
  * 설치 방법은 같은 저장소의 apps-script/README.md 를 보세요.
  * ------------------------------------------------------------
@@ -78,11 +83,51 @@ var OWNER_EMAIL = '';
  */
 var ADMIN_KEY = '';
 
-/** 시트 1행 헤더 (index.html 설정과 순서가 같아야 합니다) */
+/** 시트 1행 헤더 (index.html 설정과 순서가 같아야 합니다) — 14열째 우편번호와 15열째 상품별 배송지는 맨 뒤에 둡니다. */
 var HEADERS = [
   '주문일시', '상품명', '수량', '총금액', '입금자명', '주문자',
-  '주문자연락처', '받는분', '받는분연락처', '받는분주소', '요청사항', '입금확인', '송장번호'
+  '주문자연락처', '받는분', '받는분연락처', '받는분주소', '요청사항', '입금확인', '송장번호',
+  '우편번호', '상품별 배송지'
 ];
+
+/** 상품별 배송지(주문 단위 deliveryOverrides)를 검증합니다.
+ *  없으면 ''(통과), 있으면 각 항목의 이름·연락처·주소·주문 항목 매칭을
+ *  확인하고, 문제가 있으면 오류 문구를 돌려줍니다. */
+function validateDeliveryOverrides_(data) {
+  var overrides = data && data.deliveryOverrides;
+  if (!overrides) return '';
+  if (!Array.isArray(overrides)) return '상품별 배송지 형식이 잘못되었습니다.';
+  var itemIds = {};
+  var items = data.items || [];
+  for (var i = 0; i < items.length; i++) itemIds[items[i] && items[i].id] = true;
+  for (var j = 0; j < overrides.length; j++) {
+    var d = overrides[j] || {};
+    if (!d.itemId || !itemIds[d.itemId]) return '상품별 배송지: 주문에 없는 상품이 있습니다.';
+    if (!String(d.name || '').trim()) return '상품별 배송지: 받는 분 이름을 입력해 주세요.';
+    if (String(d.phone || '').replace(/[^0-9]/g, '').length < 9) return '상품별 배송지: 받는 분 연락처를 정확히 입력해 주세요.';
+    if (String(d.address || '').trim().length < 6) return '상품별 배송지: 배송받으실 주소를 입력해 주세요.';
+  }
+  return '';
+}
+
+/** 저장할 상품별 배송지 JSON을 만듭니다. 없으면 ''(빈칸 — 기존 주문과 하위 호환).
+ *  알려진 필드만 골라 담아 시트에 쓸모없는 값이 안 들어갑니다. */
+function deliveryOverridesJson_(data) {
+  var overrides = data && data.deliveryOverrides;
+  if (!overrides || !overrides.length) return '';
+  var out = [];
+  for (var i = 0; i < overrides.length; i++) {
+    var d = overrides[i] || {};
+    out.push({
+      itemId: safe(d.itemId), itemName: safe(d.itemName),
+      qty: Number(d.qty || 0), amount: Number(d.amount || 0),
+      name: safe(d.name), phone: safe(d.phone),
+      address: safe(d.address), detail: safe(d.detail),
+      zipcode: safe(d.zipcode), trackingNumber: safe(d.trackingNumber)
+    });
+  }
+  return JSON.stringify(out);
+}
 
 /* ============================================================
  *  주문 접수 (POST)
@@ -98,6 +143,14 @@ function doPost(e) {
     if (data.action === 'update') return adminUpdate(data);
     if (data.action === 'updateBatch') return adminUpdateBatch(data);
     if (data.action === 'delete') return adminDelete(data);
+    if (data.action === 'setSplitTracking') return setSplitTracking(data);
+    if (data.action === 'bulkImportTracking') return bulkImportTracking(data);
+
+    // 로젠택배 API 자동 연동 (admin.html 로젠 API에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'getLogenStatus') return getLogenStatus(data);
+    if (data.action === 'setLogenSetting') return setLogenSetting(data);
+    if (data.action === 'testLogenApi') return testLogenApi(data);
+    if (data.action === 'issueLogenTracking') return issueLogenTracking(data);
 
     // 홈페이지 사진 관리 (admin.html 사진 관리에서 보낸 요청)
     // body의 key는 관리자 키(기존 checkAdmin과 같은 규칙)이고,
@@ -114,6 +167,26 @@ function doPost(e) {
     if (data.action === 'getPromoStatus') return getPromoStatus(data);
     if (data.action === 'setupPromoTrigger') return setupPromoTrigger(data);
 
+    // 주문 알림 받는 번호 조회·저장 (admin.html 문자 보내기에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'getNotifyPhone') return getNotifyPhone(data);
+    if (data.action === 'setNotifyPhone') return setNotifyPhone(data);
+
+    // 홍보 예약 편집·취소 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'updatePromo') return updatePromo(data);
+    if (data.action === 'cancelPromo') return cancelPromo(data);
+
+    // 홍보문구 버전 저장·목록·삭제 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'savePromoVersion') return savePromoVersion(data);
+    if (data.action === 'listPromoVersions') return listPromoVersions(data);
+    if (data.action === 'deletePromoVersion') return deletePromoVersion(data);
+
+    // 홍보수신자 목록 관리 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'addPromoRecipients') return addPromoRecipients(data);
+    if (data.action === 'listPromoRecipients') return listPromoRecipients(data);
+    if (data.action === 'deletePromoRecipient') return deletePromoRecipient(data);
+    if (data.action === 'setPromoRecipientOptOut') return setPromoRecipientOptOut(data);
+    if (data.action === 'updatePromoRecipient') return updatePromoRecipient(data);
+
     // 상품 관리 (admin.html 상품 관리에서 보낸 요청)
     if (data.action === 'upsertProduct') return upsertProduct(data);
     if (data.action === 'setProductActive') return setProductActive(data);
@@ -129,6 +202,10 @@ function doPost(e) {
     if (!data.items || !data.items.length) missing.push('상품');
     if (missing.length) return respond({ ok: false, error: '필수값 누락: ' + missing.join(', ') });
 
+    // 상품별 배송지가 있으면 검증합니다 (이름·연락처·주소 필수, 연락처 형식, 주문 항목 매칭).
+    var splitError = validateDeliveryOverrides_(data);
+    if (splitError) return respond({ ok: false, error: splitError });
+
     // 상품 가격을 서버에서 다시 계산합니다 (상품설정 탭이 있을 때만).
     // 탭에 없는 상품이 섞여 있으면 클라이언트가 보낸 금액을 그대로 씁니다.
     // 다시 계산했으면 내역도 카탈로그 이름·가격으로 바꿔 응답에 담습니다.
@@ -136,6 +213,11 @@ function doPost(e) {
 
     var sheet = getSheet();
     ensureHeader(sheet);
+
+    // 우편번호 열(N)은 텍스트 형식으로 둡니다 — 앞자리 0(예: 03045)이 숫자로 바뀌어 사라지지 않게, 쓰기 전에 미리 잡습니다.
+    sheet.getRange(2, 14, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
+    // 상품별 배송지 열(O)도 JSON 텍스트라 텍스트 형식으로 둡니다 — 따옴표·괄호가 수식이나 숫자로 바뀌지 않게, 쓰기 전에 미리 잡습니다.
+    sheet.getRange(2, 15, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
 
     var lock = LockService.getScriptLock();
     lock.waitLock(20000); // 동시에 두 주문이 들어와도 줄이 겹치지 않게
@@ -161,7 +243,9 @@ function doPost(e) {
         safe(data.receiverAddress),
         safe(data.memo),
         '',   // 입금확인 (농원에서 직접 체크)
-        ''    // 송장번호 (출고 후 입력)
+        '',   // 송장번호 (출고 후 입력)
+        safe(data.receiverZipcode), // 우편번호 (없으면 빈칸 — 예전 주문·직접 입력도 받습니다)
+        deliveryOverridesJson_(data) // 상품별 배송지 (JSON 텍스트, 없으면 빈칸)
       ];
 
       sheet.appendRow(row);
@@ -235,6 +319,8 @@ function checkAdmin(key) {
 
 // 손님용 조회: 전화번호(주문자 또는 받는분)가 일치하는 주문만,
 // 이름·연락처·주소를 제외한 최소 정보만 돌려준다.
+// 단, 상품별 배송지는 본인 주문의 상품이 어디로 가는지 확인하는 데
+// 필요해 포함한다 (전화번호 조회로 본인 주문만 보인다).
 function trackGet(phone) {
   try {
     var digits = String(phone || '').replace(/[^0-9]/g, '');
@@ -242,7 +328,7 @@ function trackGet(phone) {
     var sheet = getSheet();
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return respond({ ok: true, orders: [] });
-    var values = sheet.getRange(2, 1, lastRow - 1, 13).getDisplayValues();
+    var values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getDisplayValues();
     var out = [];
     for (var i = 0; i < values.length; i++) {
       var r = values[i];
@@ -251,7 +337,9 @@ function trackGet(phone) {
       if (ordPhone !== digits && recvPhone !== digits) continue;
       out.push({
         datetime: r[0], product: r[1], qty: Number(r[2] || 0), amount: Number(String(r[3] || '0').replace(/[^0-9]/g, '') || 0),
-        receiver: r[7], paid: r[11] === '확인', tracking: r[12] || ''
+        receiver: r[7], zipcode: r[13] || '',
+        deliveryOverrides: parseDeliveryOverrides_(r[14]),
+        paid: r[11] === '확인', tracking: r[12] || ''
       });
       if (out.length >= 20) break;
     }
@@ -280,6 +368,8 @@ function adminList(key) {
           amount: Number(String(r[3] || '0').replace(/[^0-9]/g, '') || 0),
           depositor: r[4], orderer: r[5], ordererPhone: r[6],
           receiver: r[7], receiverPhone: r[8], receiverAddress: r[9],
+          zipcode: r[13] || '',
+          deliveryOverrides: parseDeliveryOverrides_(r[14]),
           memo: r[10], paid: String(r[11] || '').trim() !== '',
           paidText: r[11], tracking: r[12]
         });
@@ -351,6 +441,719 @@ function adminUpdate(data) {
       lock.releaseLock();
     }
     return respond({ ok: true, row: row });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 배송지별 송장번호 저장 (admin.html에서 호출, 배포 2 관리자 전용).
+ *  {row, itemIds[], trackingNumber}를 받아 해당 주문 행의 O열(JSON)을 읽어
+ *  itemIds에 해당하는 오버라이드들의 trackingNumber를 설정(빈 값이면 비움)하고,
+ *  O열에 '@' 텍스트 형식으로 다시 씁니다. 같은 주소 그룹은 itemIds 전부를
+ *  넘기면 한 번에 동기화됩니다. 새 열은 만들지 않습니다. */
+function setSplitTracking(data) {
+  try {
+    checkAdmin(data && data.key);
+    var row = Number(data && data.row || 0);
+    if (!row || row < 2) return respond({ ok: false, error: '잘못된 행 번호입니다.' });
+    var sheet = getSheet();
+    if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+    var itemIds = (data && data.itemIds) || [];
+    if (!Array.isArray(itemIds) || !itemIds.length) return respond({ ok: false, error: '송장번호를 저장할 상품을 선택해 주세요.' });
+    // 송장번호는 숫자만 허용 — 앞자리 0은 문자열 그대로 두어 유지합니다.
+    var tracking = String(data && data.trackingNumber || '').replace(/[^0-9]/g, '');
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var raw = sheet.getRange(row, 15).getDisplayValue();
+      var overrides = parseDeliveryOverrides_(raw);
+      if (!overrides.length) return respond({ ok: false, error: '상품별 배송지가 없는 주문입니다.' });
+      var wanted = {};
+      for (var i = 0; i < itemIds.length; i++) wanted[String(itemIds[i])] = true;
+      var matched = 0;
+      for (var j = 0; j < overrides.length; j++) {
+        if (wanted[overrides[j].itemId]) {
+          overrides[j].trackingNumber = tracking;
+          matched++;
+        }
+      }
+      if (!matched) return respond({ ok: false, error: '해당 상품이 없습니다.' });
+      // O열(15): JSON 텍스트 — 따옴표·괄호가 수식이나 숫자로 바뀌지 않게 텍스트 형식으로 다시 씁니다.
+      sheet.getRange(row, 15).setNumberFormat('@').setValue(JSON.stringify(overrides));
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, row: row, itemIds: itemIds, trackingNumber: tracking });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 상품별 배송지 오버라이드를 배송지(받는분·연락처·주소)별로 묶습니다.
+ *  waybill.ts groupDeliveryOverrides와 같은 키(받는분|연락처 숫자|주소|상세|우편번호)를
+ *  씁니다. 그룹의 송장번호는 그룹 안 첫 번째로 있는 번호입니다. */
+function groupDeliveryOverrides_(overrides) {
+  var groups = [];
+  for (var i = 0; i < (overrides || []).length; i++) {
+    var d = overrides[i];
+    if (!d || !d.itemId) continue;
+    var key = [
+      String(d.name || '').trim(),
+      String(d.phone || '').replace(/[^0-9]/g, ''),
+      String(d.address || '').trim(),
+      String(d.detail || '').trim(),
+      String(d.zipcode || '').trim()
+    ].join('|');
+    var g = null;
+    for (var j = 0; j < groups.length; j++) if (groups[j].key === key) { g = groups[j]; break; }
+    if (!g) {
+      g = {
+        key: key,
+        name: String(d.name || ''),
+        phone: String(d.phone || ''),
+        address: String(d.address || ''),
+        detail: String(d.detail || ''),
+        zipcode: String(d.zipcode || ''),
+        items: [],
+        trackingNumber: ''
+      };
+      groups.push(g);
+    }
+    g.items.push(d);
+    if (!g.trackingNumber && d.trackingNumber) g.trackingNumber = String(d.trackingNumber);
+  }
+  return groups;
+}
+
+/** 송장번호 일괄 입력 (admin.html에서 호출, 배포 2 관리자 전용).
+ *  {items: [{phone, trackingNumber}]}를 받아 전화번호로 주문을 찾아 송장번호를
+ *  넣어줍니다. 전화번호는 받는분·주문자 연락처, 상품별 배송지 받는분 순으로
+ *  찾습니다. 이미 송장번호가 있는 주문은 덮지 않고 건너뜁니다.
+ *  같은 전화번호로 주문·배송지가 여러 곳이면 'ambiguous'로 건너뜁니다.
+ *  새 열은 만들지 않습니다 (대표 송장은 M열, 분리 송장은 O열 JSON). */
+function bulkImportTracking(data) {
+  try {
+    checkAdmin(data && data.key);
+    var items = (data && data.items) || [];
+    if (!Array.isArray(items) || !items.length) return respond({ ok: false, error: '입력할 송장번호가 없습니다.' });
+    if (items.length > 500) return respond({ ok: false, error: '한 번에 입력할 수 있는 건수는 최대 500건입니다.' });
+    var sheet = getSheet();
+    var lastRow = sheet.getLastRow();
+    var results = [];
+    var summary = { imported: 0, not_found: 0, already_tracked: 0, ambiguous: 0, format_error: 0 };
+    var lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+      // 주문 전체를 한 번 읽어 전화번호로 찾습니다 (읽은 뒤로는 메모리를 고쳐
+      // 같은 목록 안의 다음 줄이 이미 입력된 송장을 보게 합니다).
+      var values = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getDisplayValues() : [];
+      var orders = [];
+      for (var i = 0; i < values.length; i++) {
+        var r = values[i];
+        if (!String(r[0] || '').trim() && !String(r[5] || '').trim()) continue;
+        orders.push({
+          row: i + 2,
+          product: r[1],
+          receiver: r[7],
+          receiverPhone: String(r[8] || '').replace(/[^0-9]/g, ''),
+          ordererPhone: String(r[6] || '').replace(/[^0-9]/g, ''),
+          tracking: String(r[12] || '').trim(),
+          overrides: parseDeliveryOverrides_(r[14])
+        });
+      }
+      for (var k = 0; k < items.length; k++) {
+        var it = items[k] || {};
+        var phone = String(it.phone || '').replace(/[^0-9]/g, '');
+        var tracking = String(it.trackingNumber || '').replace(/[^0-9]/g, '');
+        var base = { phone: phone, trackingNumber: tracking };
+        // 서버에서 한 번 더 검증합니다 (형식 오류는 클라이언트에서 거르지만 직접 호출도 안전하게).
+        if (!/^01[016789][0-9]{7,8}$/.test(phone)) {
+          results.push({ phone: phone, trackingNumber: tracking, status: 'format_error', message: '전화번호 형식이 잘못되었습니다. (010 등으로 시작하는 10~11자리)' });
+          summary.format_error++;
+          continue;
+        }
+        if (!/^[0-9]{10,12}$/.test(tracking)) {
+          results.push({ phone: phone, trackingNumber: tracking, status: 'format_error', message: '송장번호는 숫자 10~12자리여야 합니다.' });
+          summary.format_error++;
+          continue;
+        }
+        // 전화번호가 일치하는 곳(주문)을 찾습니다. 한 주문 안에서도 대표
+        // 받는분/주문자와 분리 배송지 받는분이 따로 있을 수 있어, 대상
+        // (대표 송장 또는 배송지 그룹) 단위로 모읍니다.
+        var targets = [];
+        for (var m = 0; m < orders.length; m++) {
+          var o = orders[m];
+          if (o.receiverPhone === phone || o.ordererPhone === phone) {
+            targets.push({ order: o, kind: 'main' });
+          }
+          var groups = groupDeliveryOverrides_(o.overrides);
+          for (var s = 0; s < groups.length; s++) {
+            if (String(groups[s].phone || '').replace(/[^0-9]/g, '') === phone) {
+              targets.push({ order: o, kind: 'split', group: groups[s] });
+            }
+          }
+        }
+        if (!targets.length) {
+          results.push({ phone: phone, trackingNumber: tracking, status: 'not_found', message: '일치하는 주문이 없습니다.' });
+          summary.not_found++;
+          continue;
+        }
+        if (targets.length > 1) {
+          var seenRows = {};
+          var candidates = [];
+          for (var c = 0; c < targets.length; c++) {
+            var cr = targets[c].order.row;
+            if (!seenRows[cr]) {
+              seenRows[cr] = true;
+              candidates.push({ row: cr, product: targets[c].order.product, receiver: targets[c].order.receiver });
+            }
+          }
+          var multiOrder = candidates.length > 1;
+          results.push({
+            phone: phone, trackingNumber: tracking, status: 'ambiguous',
+            message: multiOrder
+              ? '같은 전화번호로 주문이 여러 건 있습니다. 개별 입력으로 넣어주세요.'
+              : '같은 주문에 같은 전화번호로 받는 곳이 여러 곳입니다. 개별 입력으로 넣어주세요.',
+            candidates: candidates
+          });
+          summary.ambiguous++;
+          continue;
+        }
+        var one = targets[0];
+        var order = one.order;
+        if (one.kind === 'main') {
+          if (order.tracking) {
+            results.push({ phone: phone, trackingNumber: tracking, status: 'already_tracked', row: order.row, product: order.product, receiver: order.receiver, target: 'main', message: '이미 대표 송장번호가 있습니다. 덮어쓰지 않았습니다.' });
+            summary.already_tracked++;
+            continue;
+          }
+          // M열(13): 송장번호 — 앞자리 0이 사라지지 않게 텍스트 형식으로 저장
+          sheet.getRange(order.row, 13).setNumberFormat('@').setValue(safe(tracking));
+          order.tracking = tracking;
+          results.push({ phone: phone, trackingNumber: tracking, status: 'imported', row: order.row, product: order.product, receiver: order.receiver, target: 'main', message: '대표 송장번호를 입력했습니다.' });
+          summary.imported++;
+        } else {
+          var group = one.group;
+          if (group.trackingNumber) {
+            results.push({ phone: phone, trackingNumber: tracking, status: 'already_tracked', row: order.row, product: order.product, receiver: group.name, target: 'split', message: '이미 이 배송지 송장번호가 있습니다. 덮어쓰지 않았습니다.' });
+            summary.already_tracked++;
+            continue;
+          }
+          // O열(15): 같은 주소 그룹 상품 전부에 같은 송장번호를 넣어 동기화합니다.
+          for (var q = 0; q < group.items.length; q++) group.items[q].trackingNumber = tracking;
+          group.trackingNumber = tracking;
+          sheet.getRange(order.row, 15).setNumberFormat('@').setValue(JSON.stringify(order.overrides));
+          results.push({ phone: phone, trackingNumber: tracking, status: 'imported', row: order.row, product: order.product, receiver: group.name, target: 'split', message: '상품별 배송지 송장번호를 입력했습니다.' });
+          summary.imported++;
+        }
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, results: results, summary: summary });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/* ============================================================
+ *  로젠택배 API 자동 연동 (송장 자동 발급)
+ *  - 조사 결과 (2026-11-14, docs/logen-api-setup.md 참고):
+ *    · 로젠택배 공식 오픈API는 2026-11-08 기준 '서비스 준비중'이라
+ *      공개 엔드포인트·인증 방식이 없습니다. 공식 API를 쓰려면
+ *      계약 지점(올레영업소)에서 사업자 API 정보를 받아야 합니다.
+ *    · 중개 서비스 deliveryapi.co.kr는 로젠을 '조회'만 지원하고
+ *      발송 등록(송장 발급)은 롯데·CJ만 지원합니다. 로젠 발급 불가.
+ *    · 중개 서비스 Homepick3.0 / LogiKorea는 로젠 발급을 지원한다고
+ *      안내하지만, 상세 엔드포인트·필드는 승인·가입 뒤에만 받습니다.
+ *  - 그래서 엔드포인트·인증·요청 템플릿·응답의 송장번호 필드를
+ *    전부 '설정' 탭(LOGEN_*)으로 받는 설정 가능한 어댑터로 만들었습니다.
+ *    API 정보를 받으면 설정만 채우면 바로 구동됩니다. 코드에
+ *    엔드포인트·키를 하드코딩하지 않습니다.
+ *  - 설정이 없으면 '미연결'로 조용히 대기합니다 (오류 없이, 주문
+ *    접수는 그대로 됩니다). API 호출 실패가 주문을 망가뜨리지 않게
+ *    모든 호출은 try/catch로 감싸고 실패 사유를 돌려줍니다.
+ *  - 이미 송장번호가 있는 배송에는 새로 발급하지 않습니다 (중복
+ *    발송 방지). 발급은 실제 운송장을 만드는 동작이라, 테스트 주문에
+ *    발급하면 실제 송장이 생기니 실주문에 써주세요.
+ *  - 관리자 액션 (배포 2, checkAdmin): getLogenStatus,
+ *    setLogenSetting, testLogenApi, issueLogenTracking.
+ *    비밀값(API 키)은 상태 조회에서도 절대 반환하지 않습니다.
+ * ============================================================ */
+
+/** 로젠 API 설정 키 허용 목록 (setLogenSetting에서 이 키만 저장합니다). */
+var LOGEN_SETTING_KEYS = [
+  'LOGEN_ENABLED', 'LOGEN_PROVIDER', 'LOGEN_API_URL', 'LOGEN_API_KEY',
+  'LOGEN_API_AUTH', 'LOGEN_API_AUTH_HEADER', 'LOGEN_API_METHOD',
+  'LOGEN_API_REQUEST_TEMPLATE', 'LOGEN_API_TRACKING_FIELD',
+  'LOGEN_CUSTOMER_CODE', 'LOGEN_SENDER_NAME', 'LOGEN_SENDER_PHONE',
+  'LOGEN_SENDER_ADDRESS', 'LOGEN_SENDER_ZIPCODE', 'LOGEN_API_TEST_URL'
+];
+
+/** 보내는 분(농원) 기본값 — 공개 사업장 정보라 코드 기본값으로 둡니다.
+ *  설정(LOGEN_SENDER_*)이 있으면 설정이 우선합니다. */
+var LOGEN_DEFAULT_SENDER = {
+  name: '효돈농원',
+  phone: '010-2696-1326',
+  address: '제주특별자치도 서귀포시 칠십리로 636',
+  zipcode: ''
+};
+
+/** 기본 요청 템플릿(예시 JSON) — 제공자 문서에 맞는 형태로 바꿔야 합니다.
+ *  따옴표 안의 "{{키}}"는 JSON 문자열로, 따옴표 없는 {{수량}}·{{금액}}·
+ *  {{무게}}·{{행}}·{{품목JSON}}은 숫자/JSON 값 그대로 치환합니다.
+ *  자리표 목록은 docs/logen-api-setup.md를 참고하세요. */
+var LOGEN_DEFAULT_REQUEST_TEMPLATE = [
+  '{',
+  '  "sender": {',
+  '    "name": "{{senderName}}",',
+  '    "phone": "{{senderPhone}}",',
+  '    "address": "{{senderAddress}}",',
+  '    "zipcode": "{{senderZipcode}}"',
+  '  },',
+  '  "receiver": {',
+  '    "name": "{{receiverName}}",',
+  '    "phone": "{{receiverPhone}}",',
+  '    "address": "{{receiverAddress}}",',
+  '    "detail": "{{receiverDetail}}",',
+  '    "zipcode": "{{receiverZipcode}}"',
+  '  },',
+  '  "parcel": { "weightKg": {{weightKg}}, "items": "{{itemsText}}" },',
+  '  "items": {{itemsJson}},',
+  '  "customerCode": "{{customerCode}}",',
+  '  "orderRow": {{orderRow}},',
+  '  "memo": "{{memo}}"',
+  '}'
+].join('\n');
+
+/** 로젠 API 설정을 '설정' 탭에서 읽어 돌려줍니다. 비밀값은 이 함수
+ *  안에서만 쓰고, 상태 조회에는 여부(있음/없음)만 넘깁니다. */
+function getLogenConfig_() {
+  var enabled = String(getSetting_('LOGEN_ENABLED') || '').trim().toLowerCase();
+  var url = String(getSetting_('LOGEN_API_URL') || '').trim();
+  var apiKey = String(getSetting_('LOGEN_API_KEY') || '').trim();
+  var template = String(getSetting_('LOGEN_API_REQUEST_TEMPLATE') || '').trim();
+  if (!template) template = LOGEN_DEFAULT_REQUEST_TEMPLATE;
+  var sender = {
+    name: String(getSetting_('LOGEN_SENDER_NAME') || '').trim() || LOGEN_DEFAULT_SENDER.name,
+    phone: String(getSetting_('LOGEN_SENDER_PHONE') || '').trim() || LOGEN_DEFAULT_SENDER.phone,
+    address: String(getSetting_('LOGEN_SENDER_ADDRESS') || '').trim() || LOGEN_DEFAULT_SENDER.address,
+    zipcode: String(getSetting_('LOGEN_SENDER_ZIPCODE') || '').trim() || LOGEN_DEFAULT_SENDER.zipcode
+  };
+  return {
+    enabled: enabled === 'true',
+    configured: !!(url && apiKey),
+    provider: String(getSetting_('LOGEN_PROVIDER') || '').trim() || 'logen',
+    url: url,
+    apiKey: apiKey,
+    auth: (String(getSetting_('LOGEN_API_AUTH') || '').trim().toLowerCase()) || 'bearer',
+    authHeader: String(getSetting_('LOGEN_API_AUTH_HEADER') || '').trim() || 'Authorization',
+    method: (String(getSetting_('LOGEN_API_METHOD') || '').trim().toUpperCase()) || 'POST',
+    template: template,
+    trackingField: String(getSetting_('LOGEN_API_TRACKING_FIELD') || '').trim(),
+    customerCode: String(getSetting_('LOGEN_CUSTOMER_CODE') || '').trim(),
+    testUrl: String(getSetting_('LOGEN_API_TEST_URL') || '').trim(),
+    sender: sender
+  };
+}
+
+/** 로젠 API 연동 상태 (관리자용, D2). 비밀값은 절대 반환하지 않고
+ *  여부(있음/없음)와 설정 값만 돌려줍니다. */
+function getLogenStatus(data) {
+  try {
+    checkAdmin(data && data.key);
+    var cfg = getLogenConfig_();
+    var status = !cfg.configured ? '미연결' : (cfg.enabled ? '연결됨' : '비활성');
+    return respond({
+      ok: true,
+      enabled: cfg.enabled,
+      configured: cfg.configured,
+      provider: cfg.provider,
+      hasKey: !!cfg.apiKey,
+      hasUrl: !!cfg.url,
+      hasTemplate: !!cfg.template,
+      hasTrackingField: !!cfg.trackingField,
+      status: status,
+      settings: {
+        provider: cfg.provider,
+        apiUrl: cfg.url,
+        auth: cfg.auth,
+        authHeader: cfg.authHeader,
+        method: cfg.method,
+        template: cfg.template,
+        trackingField: cfg.trackingField,
+        customerCode: cfg.customerCode,
+        senderName: cfg.sender.name,
+        senderPhone: cfg.sender.phone,
+        senderAddress: cfg.sender.address,
+        senderZipcode: cfg.sender.zipcode,
+        testUrl: cfg.testUrl,
+        enabled: cfg.enabled
+      }
+    });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 로젠 API 설정 저장 (관리자용, D2). LOGEN_* 키만 허용합니다.
+ *  API 키는 빈 값이면 기존 값을 유지합니다 (지우려면 편집기에서 직접 지우세요). */
+function setLogenSetting(data) {
+  try {
+    checkAdmin(data && data.key);
+    var key = String((data && data.settingKey) || '').trim();
+    if (LOGEN_SETTING_KEYS.indexOf(key) < 0) {
+      return respond({ ok: false, error: '저장할 수 없는 설정 키입니다.' });
+    }
+    var value = (data && data.value !== undefined && data.value !== null) ? String(data.value) : '';
+    if (key === 'LOGEN_API_KEY' && value === '') {
+      return respond({ ok: true, key: key, unchanged: true });
+    }
+    setSetting_(key, value);
+    return respond({ ok: true, key: key });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 요청 템플릿(JSON)에 배송 값을 채워 요청 본문 객체를 만듭니다.
+ *  따옴표 안의 "{{키}}"는 JSON 문자열로(따옴표·백슬래시 자동 이스케이프),
+ *  따옴표 없는 {{수량}}·{{금액}}·{{무게}}·{{행}}·{{품목JSON}}은 숫자/JSON 값
+ *  그대로 치환합니다. 모르는 자리표가 남으면 오류를 돌려줍니다
+ *  (잘못된 요청을 안 보냅니다). */
+function buildLogenRequestBody_(config, shipment) {
+  var text = String(config.template || '');
+  if (!text.trim()) return { error: '로젠 API 요청 템플릿이 비어 있습니다.' };
+  var vals = {
+    senderName: config.sender.name, senderPhone: config.sender.phone,
+    senderAddress: config.sender.address, senderZipcode: config.sender.zipcode,
+    receiverName: shipment.receiverName, receiverPhone: shipment.receiverPhone,
+    receiverAddress: shipment.receiverAddress, receiverDetail: shipment.receiverDetail || '',
+    receiverZipcode: shipment.receiverZipcode || '',
+    itemsText: shipment.itemsText, productNames: shipment.productNames,
+    customerCode: config.customerCode, memo: shipment.memo || '',
+    orderDate: shipment.orderDate || '',
+    date: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd'),
+    qty: String(shipment.qty), amount: String(shipment.amount),
+    weightKg: String(shipment.weightKg), orderRow: String(shipment.orderRow)
+  };
+  // 1) 품목 JSON — 따옴표 있든 없든 JSON 배열 그대로 넣습니다.
+  var itemsJson = JSON.stringify(shipment.items || []);
+  text = text.split('"{{itemsJson}}"').join(itemsJson);
+  text = text.split('{{itemsJson}}').join(itemsJson);
+  // 2) 따옴표 안 자리표 → JSON 문자열로 치환합니다.
+  for (var k in vals) {
+    var quoted = '"{{' + k + '}}"';
+    if (text.indexOf(quoted) >= 0) text = text.split(quoted).join(JSON.stringify(vals[k]));
+  }
+  // 3) 따옴표 없는 숫자 자리표 → 숫자 그대로 치환합니다.
+  var numKeys = ['qty', 'amount', 'weightKg', 'orderRow'];
+  for (var i = 0; i < numKeys.length; i++) {
+    text = text.split('{{' + numKeys[i] + '}}').join(vals[numKeys[i]]);
+  }
+  // 4) 남은 자리표가 있으면 오류 (제공자 전용 필드는 문서의 목록에 맞게 고쳐주세요).
+  var left = text.match(/\{\{[a-zA-Z0-9_]+\}\}/);
+  if (left) {
+    return { error: '요청 템플릿에 알 수 없는 자리표가 있습니다: ' + left[0] + ' — docs/logen-api-setup.md의 자리표 목록을 확인하세요.' };
+  }
+  var body = null;
+  try {
+    body = JSON.parse(text);
+  } catch (e) {
+    return { error: '요청 템플릿이 올바른 JSON이 아닙니다: ' + String(e) };
+  }
+  return { body: body };
+}
+
+/** 응답 객체에서 송장번호를 찾습니다. 지정된 경로(점 표기)를 먼저 보고,
+ *  없으면 응답 전체가 송장번호인지, 흔한 송장번호 키가 있는지 봅니다. */
+function extractTrackingNumber_(data, fieldPath) {
+  if (fieldPath) {
+    var v = getPathValue_(data, fieldPath);
+    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+  }
+  if (typeof data === 'string' && /^[0-9]{8,15}$/.test(data.trim())) return data.trim();
+  var keys = ['trackingNumber', 'invoiceNo', 'waybillNo', 'trackingNo', '운송장번호', 'invoice_number', 'waybill_number'];
+  if (data && typeof data === 'object') {
+    for (var i = 0; i < keys.length; i++) {
+      var val = data[keys[i]];
+      if (val !== undefined && val !== null && String(val).trim() !== '') return String(val).trim();
+    }
+    var inner = data.data || data.result || data.body;
+    if (inner && typeof inner === 'object') {
+      for (var j = 0; j < keys.length; j++) {
+        var iv = inner[keys[j]];
+        if (iv !== undefined && iv !== null && String(iv).trim() !== '') return String(iv).trim();
+      }
+    }
+  }
+  return '';
+}
+
+/** 점 표기 경로("data.trackingNumber")로 객체 안 값을 읽습니다. */
+function getPathValue_(obj, path) {
+  var cur = obj;
+  var parts = String(path).split('.');
+  for (var i = 0; i < parts.length; i++) {
+    if (cur === null || cur === undefined) return undefined;
+    cur = cur[parts[i]];
+  }
+  return cur;
+}
+
+/** 로젠 API 오류 응답에서 사람이 읽을 수 있는 메시지를 뽑습니다. */
+function providerErrorText_(res) {
+  var d = res && res.data;
+  if (d && typeof d === 'object') {
+    var m = d.message || d.error || d.msg || (d.data && (d.data.message || d.data.error));
+    if (m) return String(m);
+  }
+  var t = String((res && res.text) || '');
+  return t ? t.slice(0, 300) : '';
+}
+
+/** 로젠 API를 호출합니다. 인증 방식은 설정(LOGEN_API_AUTH)대로 적용합니다.
+ *  bearer = Authorization: Bearer 키 / header = 지정 헤더에 키 /
+ *  basic = Authorization: Basic base64(키) (키에 콜론이 있으면 그대로,
+ *  없으면 키: 로 인코딩) / query = URL에 ?apiKey=키 를 붙입니다. */
+function callLogenApi_(config, bodyObj) {
+  var url = config.url;
+  var headers = {};
+  var auth = (config.auth || 'bearer').toLowerCase();
+  if (auth === 'bearer') {
+    headers[config.authHeader || 'Authorization'] = 'Bearer ' + config.apiKey;
+  } else if (auth === 'header') {
+    headers[config.authHeader || 'X-Api-Key'] = config.apiKey;
+  } else if (auth === 'basic') {
+    var basicKey = String(config.apiKey || '');
+    if (basicKey.indexOf(':') < 0) basicKey = basicKey + ':';
+    headers['Authorization'] = 'Basic ' + Utilities.base64Encode(basicKey);
+  } else if (auth === 'query') {
+    url += (url.indexOf('?') >= 0 ? '&' : '?') + 'apiKey=' + encodeURIComponent(config.apiKey);
+  } else {
+    return { ok: false, error: '지원하지 않는 인증 방식입니다: ' + config.auth };
+  }
+  var options = {
+    method: (config.method || 'POST').toUpperCase(),
+    headers: headers,
+    contentType: 'application/json',
+    payload: JSON.stringify(bodyObj),
+    muteHttpExceptions: true
+  };
+  var res;
+  try {
+    res = UrlFetchApp.fetch(url, options);
+  } catch (err) {
+    return { ok: false, error: '로젠 API 호출에 실패했습니다: ' + String(err) };
+  }
+  var status = 0;
+  var text = '';
+  try { status = res.getResponseCode(); } catch (e) { status = 0; }
+  try { text = res.getContentText() || ''; } catch (e) { text = ''; }
+  var parsed = null;
+  if (text) {
+    try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+  }
+  return { ok: status >= 200 && status < 300, status: status, data: parsed, text: text };
+}
+
+/** 상품명에서 "10kg" 같은 무게를 읽어 총 무게(kg)를 추정합니다.
+ *  없으면 10kg/박스로 봅니다. 어디까지나 추정이라 템플릿 {{weightKg}}용입니다. */
+function estimateWeightKgFromItems_(items) {
+  var total = 0;
+  for (var i = 0; i < (items || []).length; i++) {
+    var it = items[i] || {};
+    var name = String(it.name || it.itemName || '');
+    var m = name.match(/([0-9]+(?:\.[0-9]+)?)\s*kg/i);
+    var per = m ? parseFloat(m[1]) : 10;
+    total += per * (Number(it.qty) || 0);
+  }
+  return total > 0 ? Math.round(total * 10) / 10 : 0;
+}
+
+/** 주문 요약 문자열("... 10kg 2박스, ... 5kg 1박스")에서 무게를 추정합니다.
+ *  구간별로 kg와 박스 수를 곱해 더합니다. 못 읽으면 박스 수 × 10kg으로 봅니다. */
+function estimateWeightKgFromSummary_(summary, totalQty) {
+  var total = 0;
+  var parts = String(summary || '').split(',');
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i];
+    var kgm = p.match(/([0-9]+(?:\.[0-9]+)?)\s*kg/i);
+    var boxm = p.match(/([0-9]+)\s*박스/);
+    var kg = kgm ? parseFloat(kgm[1]) : 10;
+    var boxes = boxm ? Number(boxm[1]) : 0;
+    if (boxes > 0) total += kg * boxes;
+  }
+  if (total > 0) return Math.round(total * 10) / 10;
+  return Math.max(0, Number(totalQty) || 0) * 10;
+}
+
+/** 주문 행에서 로젠 API에 보낼 배송 정보를 만듭니다.
+ *  itemIds가 있으면 그 상품들이 속한 분리 배송지 그룹을, 없으면 기본
+ *  배송지를 대상으로 합니다. 이미 송장번호가 있으면 alreadyTracked를
+ *  돌려줍니다 (중복 발급 방지). */
+function buildLogenShipment_(sheet, row, itemIds) {
+  var values = sheet.getRange(row, 1, 1, HEADERS.length).getDisplayValues()[0];
+  var totalQty = Number(values[2]) || 0;
+  var totalAmount = Number(String(values[3] || '').replace(/[^0-9]/g, '')) || 0;
+  var overrides = parseDeliveryOverrides_(values[14]);
+  var memo = String(values[10] || '');
+  var orderDate = String(values[0] || '');
+  if (itemIds && itemIds.length) {
+    var groups = groupDeliveryOverrides_(overrides);
+    var wanted = {};
+    for (var i = 0; i < itemIds.length; i++) wanted[String(itemIds[i])] = true;
+    var group = null;
+    for (var g = 0; g < groups.length; g++) {
+      var has = false;
+      for (var k = 0; k < groups[g].items.length; k++) {
+        if (wanted[groups[g].items[k].itemId]) { has = true; break; }
+      }
+      if (has) { group = groups[g]; break; }
+    }
+    if (!group) return { error: '해당 상품의 배송지를 찾을 수 없습니다.' };
+    var gItems = group.items.map(function (d) {
+      return { itemId: d.itemId, name: d.itemName, qty: Number(d.qty) || 0, amount: Number(d.amount) || 0 };
+    });
+    var gQty = 0, gAmount = 0;
+    for (var q = 0; q < gItems.length; q++) { gQty += gItems[q].qty; gAmount += gItems[q].amount; }
+    return {
+      kind: 'split', itemIds: gItems.map(function (d) { return d.itemId; }),
+      receiverName: group.name, receiverPhone: group.phone,
+      receiverAddress: group.address, receiverDetail: group.detail,
+      receiverZipcode: group.zipcode,
+      items: gItems,
+      itemsText: gItems.map(function (d) { return d.name + ' ' + d.qty + '박스'; }).join(', '),
+      productNames: gItems.map(function (d) { return d.name; }).join(', '),
+      qty: gQty, amount: gAmount,
+      weightKg: estimateWeightKgFromItems_(gItems),
+      trackingNumber: group.trackingNumber || '',
+      alreadyTracked: !!(group.trackingNumber || ''),
+      orderDate: orderDate, orderRow: row, memo: memo
+    };
+  }
+  // 기본 배송지 — 오버라이드에 없는 상품이 기본 주소로 갑니다.
+  var ovQty = 0, ovAmount = 0;
+  for (var o = 0; o < overrides.length; o++) { ovQty += Number(overrides[o].qty) || 0; ovAmount += Number(overrides[o].amount) || 0; }
+  var mainQty = Math.max(0, totalQty - ovQty);
+  var mainAmount = Math.max(0, totalAmount - ovAmount);
+  var mainTracking = String(values[12] || '').trim();
+  var summary = String(values[1] || '');
+  return {
+    kind: 'main', itemIds: [],
+    receiverName: String(values[7] || ''), receiverPhone: String(values[8] || ''),
+    receiverAddress: String(values[9] || ''), receiverDetail: '',
+    receiverZipcode: String(values[13] || '').trim(),
+    items: [{ name: summary, qty: mainQty, amount: mainAmount }],
+    itemsText: summary,
+    productNames: summary,
+    qty: mainQty, amount: mainAmount,
+    weightKg: estimateWeightKgFromSummary_(summary, mainQty),
+    trackingNumber: mainTracking,
+    alreadyTracked: !!mainTracking,
+    orderDate: orderDate, orderRow: row, memo: memo
+  };
+}
+
+/** 로젠 API 연결 테스트 (관리자용, D2). 실제 송장을 발행하지 않습니다.
+ *  설정·템플릿을 검증하고, 테스트 URL이 있으면 그 URL에 가볍게(GET)
+ *  호출해 응답 상태만 확인합니다. 테스트 URL이 없으면 설정 검증
+ *  결과만 돌려줍니다. */
+function testLogenApi(data) {
+  try {
+    checkAdmin(data && data.key);
+    var cfg = getLogenConfig_();
+    if (!cfg.configured) {
+      return respond({ ok: false, error: '미연결: 로젠 API URL과 API 키를 먼저 입력하세요. (로젠 올레영업소에서 API 정보를 받아야 합니다.)' });
+    }
+    if (!/^https?:\/\/.+/.test(cfg.url)) {
+      return respond({ ok: false, error: '로젠 API URL이 올바른 주소가 아닙니다: ' + cfg.url });
+    }
+    // 템플릿이 JSON으로 풀리는지 예시 배송 정보로 검사합니다.
+    var sample = {
+      receiverName: '테스트', receiverPhone: '010-0000-0000',
+      receiverAddress: '테스트 주소', receiverDetail: '', receiverZipcode: '',
+      items: [{ name: '테스트 상품', qty: 1, amount: 0 }],
+      itemsText: '테스트 상품 1박스', productNames: '테스트 상품',
+      qty: 1, amount: 0, weightKg: 10, orderRow: 0, orderDate: '', memo: ''
+    };
+    var bodyCheck = buildLogenRequestBody_(cfg, sample);
+    if (bodyCheck.error) return respond({ ok: false, error: bodyCheck.error });
+    if (!cfg.testUrl) {
+      return respond({
+        ok: true, tested: false,
+        message: '설정과 요청 템플릿이 올바른 JSON입니다. 테스트 URL이 없어 연결 상태(HTTP)까지는 확인하지 못했습니다. 실제 발급은 주문에서 자동 발급으로 확인하세요.'
+      });
+    }
+    var res = callLogenApi_({ url: cfg.testUrl, apiKey: cfg.apiKey, auth: cfg.auth, authHeader: cfg.authHeader, method: 'GET' }, {});
+    var reachable = res.status > 0;
+    var msg = reachable
+      ? (res.ok
+        ? '테스트 URL에 닿았습니다 (HTTP ' + res.status + ').'
+        : '테스트 URL 서버에는 닿았으나 HTTP ' + res.status + '를 받았습니다. 발급 URL이 맞는지, 인증이 맞는지 확인하세요.')
+      : ('테스트 URL에 닿지 못했습니다: ' + (res.error || '연결 실패'));
+    return respond({ ok: res.ok && reachable, tested: true, status: res.status, message: msg });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 로젠 API로 송장 자동 발급 (관리자용, D2).
+ *  {row, itemIds?(분리 배송지 그룹이면 해당 상품들)}를 받아, 해당 배송
+ *  (기본 배송지면 대표 송장 M열, 분리 배송지면 O열 JSON)에 송장번호를
+ *  넣어줍니다. 이미 송장번호가 있으면 새로 발급하지 않고 오류를 돌려줍니다
+ *  (중복 발송 방지). API 실패가 주문 자체를 망가뜨리지 않게 try/catch로
+ *  감싸고, 실패 사유를 그대로 돌려줍니다. */
+function issueLogenTracking(data) {
+  try {
+    checkAdmin(data && data.key);
+    var cfg = getLogenConfig_();
+    if (!cfg.enabled || !cfg.configured) {
+      return respond({ ok: false, error: '미연결: 로젠 API가 연결되지 않았습니다. 설정에서 API URL과 키를 입력하고 활성화하세요.' });
+    }
+    var row = Number((data && data.row) || 0);
+    if (!row || row < 2) return respond({ ok: false, error: '잘못된 행 번호입니다.' });
+    var itemIds = (data && data.itemIds) || null;
+    var sheet = getSheet();
+    if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+    var shipment = buildLogenShipment_(sheet, row, itemIds);
+    if (shipment.error) return respond({ ok: false, error: shipment.error });
+    if (shipment.alreadyTracked) {
+      return respond({ ok: false, error: '이미 송장번호가 있습니다. (' + shipment.trackingNumber + ') 새로 발급하지 않았습니다.' });
+    }
+    var bodyRes = buildLogenRequestBody_(cfg, shipment);
+    if (bodyRes.error) return respond({ ok: false, error: bodyRes.error });
+    var res = callLogenApi_(cfg, bodyRes.body);
+    if (!res.ok) {
+      return respond({ ok: false, error: '로젠 API 호출 실패 (HTTP ' + res.status + '): ' + (providerErrorText_(res) || '응답을 확인하세요.') });
+    }
+    var tracking = extractTrackingNumber_(
+      (res.data !== null && res.data !== undefined) ? res.data : res.text, cfg.trackingField);
+    tracking = String(tracking || '').replace(/[^0-9]/g, '');
+    if (!tracking) {
+      return respond({ ok: false, error: '송장번호를 응답에서 찾지 못했습니다. 응답의 송장번호 필드(LOGEN_API_TRACKING_FIELD)를 확인하세요. 응답: ' + String(res.text || '').slice(0, 200) });
+    }
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      if (shipment.kind === 'split') {
+        var raw = sheet.getRange(row, 15).getDisplayValue();
+        var overrides = parseDeliveryOverrides_(raw);
+        var wanted = {};
+        for (var i = 0; i < shipment.itemIds.length; i++) wanted[String(shipment.itemIds[i])] = true;
+        var matched = 0;
+        for (var j = 0; j < overrides.length; j++) {
+          if (wanted[overrides[j].itemId]) { overrides[j].trackingNumber = tracking; matched++; }
+        }
+        if (!matched) return respond({ ok: false, error: '해당 상품이 없습니다.' });
+        sheet.getRange(row, 15).setNumberFormat('@').setValue(JSON.stringify(overrides));
+      } else {
+        sheet.getRange(row, 13).setNumberFormat('@').setValue(tracking);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, row: row, kind: shipment.kind, trackingNumber: tracking });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
@@ -867,13 +1670,14 @@ function notifyNewOrder_(data, productText) {
     var message = '[효돈농원] 새 주문: ' + productText + ' ' + amount + '원, ' +
       data.ordererName + ' ' + data.ordererPhone +
       ' (입금자명: ' + data.depositor + ')';
+    var notifyPhone = getNotifyPhone_();
     var ok = false;
-    try { ok = sendSmsViaSmsGate_(NOTIFY_PHONE, message); } catch (e) { ok = false; }
+    try { ok = sendSmsViaSmsGate_(notifyPhone, message); } catch (e) { ok = false; }
     // 주문 알림도 '문자발송기록' 탭에 남깁니다 (구분 '주문알림').
     // 기록 쓰기가 실패해도 주문 접수와 문자 발송 결과에는 영향이 없습니다.
     try {
       var logSheet = getSmsLogSheet_();
-      logPromoSend_(logSheet, '주문알림', message, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [NOTIFY_PHONE]);
+      logPromoSend_(logSheet, '주문알림', message, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [notifyPhone]);
     } catch (logErr) {
       Logger.log('notifyNewOrder_ log failed: ' + logErr);
     }
@@ -885,8 +1689,9 @@ function notifyNewOrder_(data, productText) {
 
 /**
  * 관리자 테스트용 (POST action=testSmsGate, 배포 2, checkAdmin 필수).
- * "[효돈농원] 문자 알림 테스트입니다."를 NOTIFY_PHONE으로 보냅니다.
- * 계정이 비어 있으면 에러를 반환합니다.
+ * "[효돈농원] 문자 알림 테스트입니다."를 주문 알림 받는 번호(설정에 저장된
+ * 값, 없으면 NOTIFY_PHONE 상수)로 보냅니다. 계정이 비어 있으면 에러를
+ * 반환합니다.
  */
 function testSmsGate(data) {
   checkAdmin(data && data.key);
@@ -894,12 +1699,71 @@ function testSmsGate(data) {
     return respond({ ok: false, error: 'SMS Gateway 계정을 먼저 입력하세요. (Code.gs의 SMSGATE_USERNAME·SMSGATE_PASSWORD)' });
   }
   try {
-    var ok = sendSmsViaSmsGate_(NOTIFY_PHONE, '[효돈농원] 문자 알림 테스트입니다.');
+    var notifyPhone = getNotifyPhone_();
+    var ok = sendSmsViaSmsGate_(notifyPhone, '[효돈농원] 문자 알림 테스트입니다.');
     if (ok) return respond({ ok: true });
     return respond({ ok: false, error: '문자 발송에 실패했습니다. SMS Gateway 앱이 켜져 있고 Cloud Server에 연결됐는지 확인하세요.' });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
+}
+
+/* ============================================================
+ *  설정 탭 (key/value) — 주문 알림 받는 번호 등 관리자 설정 저장용
+ *  - '설정' 탭: 열 [key, value]. 없으면 만들 때 헤더를 채웁니다.
+ *  - NOTIFY_PHONE은 '설정' 탭에 key 'NOTIFY_PHONE'으로 저장합니다.
+ *    저장된 값이 없거나 형식이 틀리면 Code.gs 상수 NOTIFY_PHONE을 씁니다.
+ * ============================================================ */
+var SETTINGS_SHEET_NAME = '설정';
+var SETTINGS_HEADERS = ['key', 'value'];
+
+/** '설정' 탭을 가져옵니다. create가 true면 없으면 헤더와 함께 만듭니다. */
+function getSettingsSheet_(create) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(SETTINGS_SHEET_NAME);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(SETTINGS_SHEET_NAME);
+    sheet.getRange(1, 1, 1, SETTINGS_HEADERS.length).setValues([SETTINGS_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** '설정' 탭에서 key의 값을 읽습니다. 탭이나 key가 없으면 ''를 반환합니다. */
+function getSetting_(key) {
+  var sheet = getSettingsSheet_(false);
+  if (!sheet) return '';
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return '';
+  var rows = sheet.getRange(2, 1, lastRow - 1, SETTINGS_HEADERS.length).getDisplayValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === key) return String(rows[i][1] || '').trim();
+  }
+  return '';
+}
+
+/** '설정' 탭에 key/value를 저장합니다. 있으면 덮어쓰고 없으면 추가합니다. */
+function setSetting_(key, value) {
+  var sheet = getSettingsSheet_(true);
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    var rows = sheet.getRange(2, 1, lastRow - 1, SETTINGS_HEADERS.length).getDisplayValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim() === key) {
+        sheet.getRange(i + 2, 2).setValue(value);
+        return;
+      }
+    }
+  }
+  sheet.appendRow([key, value]);
+}
+
+/** 주문 알림을 받는 번호 (국내 010... 형식). '설정' 탭에 저장된 값이
+ *  있고 형식이 맞으면 그걸 쓰고, 없거나 틀리면 상수 NOTIFY_PHONE을 씁니다. */
+function getNotifyPhone_() {
+  var saved = normalizeMobileDigits_(getSetting_('NOTIFY_PHONE'));
+  if (saved && isValidMobileDigits_(saved)) return saved;
+  return NOTIFY_PHONE;
 }
 
 /* ============================================================
@@ -1115,6 +1979,20 @@ function reservePromo(data) {
     if (!numbers.length) {
       return respond({ ok: false, error: '유효한 휴대폰 번호가 없습니다. 010으로 시작하는 번호를 한 줄에 하나씩 입력하세요.' });
     }
+    // 수신거부된 번호는 방어적으로 제외합니다 ('홍보수신자' 탭).
+    var optedOut = getOptedOutPhones_();
+    var filteredOptOut = 0;
+    if (optedOut.length) {
+      var keptNumbers = [];
+      for (var ni = 0; ni < numbers.length; ni++) {
+        if (optedOut.indexOf(e164ToDomestic_(numbers[ni])) >= 0) { filteredOptOut++; continue; }
+        keptNumbers.push(numbers[ni]);
+      }
+      numbers = keptNumbers;
+    }
+    if (!numbers.length) {
+      return respond({ ok: false, error: '선택한 번호가 모두 수신거부 상태라 예약할 번호가 없습니다. 수신자 목록에서 수신거부를 해제하세요.' });
+    }
     if (numbers.length > PROMO_QUEUE_MAX) {
       return respond({ ok: false, error: '한 번에 예약할 수 있는 건수는 최대 ' + PROMO_QUEUE_MAX + '건입니다. (' + numbers.length + '건 입력됨)' });
     }
@@ -1144,7 +2022,8 @@ function reservePromo(data) {
       queued: numbers.length,
       message: finalMessage,
       estimatedDays: estimatePromoDays_(pendingAfter, PROMO_DAILY_LIMIT),
-      pending: pendingAfter
+      pending: pendingAfter,
+      filteredOptOut: filteredOptOut
     });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
@@ -1170,6 +2049,11 @@ function sendPromoTest(data) {
     var numbers = parsePromoNumbers_((data && data.numbers) || (data && data.numbersText) || '');
     if (numbers.length !== 1) {
       return respond({ ok: false, error: '테스트 발송은 번호 1개만 보낼 수 있습니다. 테스트 번호를 1개만 입력하세요.' });
+    }
+    // 수신거부된 번호는 테스트 발송도 하지 않습니다.
+    var optedOutTest = getOptedOutPhones_();
+    if (optedOutTest.indexOf(e164ToDomestic_(numbers[0])) >= 0) {
+      return respond({ ok: false, error: '이 번호는 수신거부 상태라 보낼 수 없습니다. 수신자 목록에서 수신거부를 해제하세요.' });
     }
     var today = todayKst_();
     var logSheet = getSmsLogSheet_();
@@ -1303,8 +2187,11 @@ function setupPromoTrigger(data) {
 /**
  * 홍보 문자 예약 현황 (관리자 전용, 배포 2)
  * 반환: {ok, queue: {waiting, sending, done, failed},
- *         todaySent, limit, triggerInstalled, recent: [최신 10건]}
+ *         todaySent, limit, triggerInstalled, recent: [최신 10건],
+ *         items: [큐 항목 — '대기'·'발송중'만, 오래된 순 최대 100건]}
  * 최근 기록: [{date, kind, message, total, sent, failed, failedNumbers}]
+ * 큐 항목: [{row, reservedAt, phone, message, status, startedAt, sentAt, error}]
+ * (row는 큐 시트 행 번호(1부터)로, updatePromo·cancelPromo에 그대로 씁니다)
  */
 function getPromoStatus(data) {
   try {
@@ -1312,6 +2199,7 @@ function getPromoStatus(data) {
     var queueSheet = getPromoQueueSheet_();
     var logSheet = getSmsLogSheet_();
     var queue = { waiting: 0, sending: 0, done: 0, failed: 0 };
+    var items = [];
     var qLast = queueSheet.getLastRow();
     if (qLast >= 2) {
       var qRows = queueSheet.getRange(2, 1, qLast - 1, SMS_QUEUE_HEADERS.length).getDisplayValues();
@@ -1319,6 +2207,22 @@ function getPromoStatus(data) {
       queue.sending = countQueueStatus_(qRows, '발송중');
       queue.done = countQueueStatus_(qRows, '발송완료');
       queue.failed = countQueueStatus_(qRows, '실패');
+      // 편집·모니터링용 큐 항목: '대기'와 '발송중'만 오래된 순으로 최대 100건.
+      // 발송완료·실패·취소는 최근 발송 기록(recent)에 남습니다.
+      for (var qi = 0; qi < qRows.length && items.length < 100; qi++) {
+        var qs = String((qRows[qi] || [])[3] || '');
+        if (qs !== '대기' && qs !== '발송중') continue;
+        items.push({
+          row: qi + 2,
+          reservedAt: String(qRows[qi][0] || ''),
+          phone: String(qRows[qi][1] || ''),
+          message: String(qRows[qi][2] || ''),
+          status: qs,
+          startedAt: String(qRows[qi][4] || ''),
+          sentAt: String(qRows[qi][5] || ''),
+          error: String(qRows[qi][6] || '')
+        });
+      }
     }
     var today = todayKst_();
     var todaySent = readTodaySent_(logSheet, today);
@@ -1345,8 +2249,598 @@ function getPromoStatus(data) {
       todaySent,
       limit: PROMO_DAILY_LIMIT,
       triggerInstalled: hasPromoTrigger_(),
-      recent
+      recent,
+      items
     });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 주문 알림 받는 번호 조회 (관리자 전용, 배포 2)
+ * 반환: {ok, phone: 현재 적용되는 번호, saved: 저장된 값이 있는지,
+ *        defaultPhone: 상수 기본값(NOTIFY_PHONE)}
+ */
+function getNotifyPhone(data) {
+  try {
+    checkAdmin(data && data.key);
+    var saved = normalizeMobileDigits_(getSetting_('NOTIFY_PHONE'));
+    var hasSaved = !!saved && isValidMobileDigits_(saved);
+    return respond({
+      ok: true,
+      phone: hasSaved ? saved : NOTIFY_PHONE,
+      saved: hasSaved,
+      defaultPhone: NOTIFY_PHONE
+    });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 주문 알림 받는 번호 저장 (관리자 전용, 배포 2)
+ * body: { action: 'setNotifyPhone', key: 관리자 키, phone: '010-...' }
+ * 형식이 맞으면 '설정' 탭에 key 'NOTIFY_PHONE'으로 저장합니다. 이후
+ * 주문 알림(notifyNewOrder_)과 테스트(testSmsGate)는 저장된 번호로 보냅니다.
+ * 반환: {ok, phone: 저장된 번호}
+ */
+function setNotifyPhone(data) {
+  try {
+    checkAdmin(data && data.key);
+    var phone = normalizeMobileDigits_((data && data.phone) || '');
+    if (!isValidMobileDigits_(phone)) {
+      return respond({ ok: false, error: '유효한 휴대폰 번호가 아닙니다. 010으로 시작하는 번호를 입력하세요.' });
+    }
+    setSetting_('NOTIFY_PHONE', phone);
+    return respond({ ok: true, phone: phone });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 홍보 예약 1건 편집 (관리자 전용, 배포 2) — 상태 '대기'인 행만 바꿀 수 있습니다.
+ * body: { action: 'updatePromo', key: 관리자 키, row: 큐 시트 행 번호(1부터),
+ *         message?: 새 문자, phone?: 새 번호 }
+ * 큐 처리기(processPromoQueue_)가 같은 행을 '발송중'으로 바꾸는 것과 겹치지
+ * 않게 잠금을 잡고 상태를 다시 확인한 뒤에만 씁니다. 문자는 저장할 때
+ * buildPromoMessage_로 [효돈농원]·수신거부 안내를 다시 붙입니다.
+ * 반환: {ok, row, phone, message}
+ */
+function updatePromo(data) {
+  try {
+    checkAdmin(data && data.key);
+    var row = Number((data && data.row) || 0);
+    if (!row || row < 2) {
+      return respond({ ok: false, error: '편집할 예약 행을 알 수 없습니다.' });
+    }
+    var hasMessage = data && typeof data.message === 'string';
+    var hasPhone = data && typeof data.phone === 'string';
+    if (!hasMessage && !hasPhone) {
+      return respond({ ok: false, error: '바꿀 문자나 번호를 입력하세요.' });
+    }
+    var newMessage = '';
+    if (hasMessage) {
+      newMessage = String(data.message || '').trim();
+      if (!newMessage) return respond({ ok: false, error: '보낼 문자를 입력하세요.' });
+      if (newMessage.length > 2000) return respond({ ok: false, error: '문자는 2000자까지 보낼 수 있습니다.' });
+      newMessage = buildPromoMessage_(newMessage);
+    }
+    var newPhone = '';
+    if (hasPhone) {
+      var numbers = parsePromoNumbers_([data.phone]);
+      if (numbers.length !== 1) {
+        return respond({ ok: false, error: '유효한 휴대폰 번호가 아닙니다. 010으로 시작하는 번호를 입력하세요.' });
+      }
+      newPhone = e164ToDomestic_(numbers[0]);
+    }
+    var sheet = getPromoQueueSheet_();
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      if (row > sheet.getLastRow()) {
+        return respond({ ok: false, error: '없는 예약 행입니다.' });
+      }
+      var status = String(sheet.getRange(row, 4).getDisplayValue() || '');
+      if (status !== '대기') {
+        return respond({ ok: false, error: '이미 발송 중이거나 발송된 예약은 편집할 수 없습니다. (상태: ' + status + ')' });
+      }
+      if (hasMessage) sheet.getRange(row, 3).setValue(newMessage);
+      if (hasPhone) sheet.getRange(row, 2).setValue(newPhone);
+      return respond({
+        ok: true,
+        row: row,
+        phone: hasPhone ? newPhone : String(sheet.getRange(row, 2).getDisplayValue() || ''),
+        message: hasMessage ? newMessage : String(sheet.getRange(row, 3).getDisplayValue() || '')
+      });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 홍보 예약 1건 취소 (관리자 전용, 배포 2) — 상태 '대기'인 행만 취소할 수 있습니다.
+ * body: { action: 'cancelPromo', key: 관리자 키, row: 큐 시트 행 번호(1부터) }
+ * 행을 지우지 않고 상태만 '취소'로 바꿉니다. 큐 처리기는 '대기'만 보내므로
+ * 취소된 행은 더 이상 발송되지 않습니다.
+ * 반환: {ok, row}
+ */
+function cancelPromo(data) {
+  try {
+    checkAdmin(data && data.key);
+    var row = Number((data && data.row) || 0);
+    if (!row || row < 2) {
+      return respond({ ok: false, error: '취소할 예약 행을 알 수 없습니다.' });
+    }
+    var sheet = getPromoQueueSheet_();
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      if (row > sheet.getLastRow()) {
+        return respond({ ok: false, error: '없는 예약 행입니다.' });
+      }
+      var status = String(sheet.getRange(row, 4).getDisplayValue() || '');
+      if (status !== '대기') {
+        return respond({ ok: false, error: '이미 발송 중이거나 발송된 예약은 취소할 수 없습니다. (상태: ' + status + ')' });
+      }
+      sheet.getRange(row, 4).setValue('취소');
+      return respond({ ok: true, row: row });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/* ============================================================
+ *  홍보문구 버전 저장 · 홍보수신자 목록
+ *  - 홍보문구 버전: '홍보문구버전' 탭 [버전명, 문구, 생성일시]. 같은
+ *    이름이면 덮어씁니다. 문구는 본문만 저장하고, 앞 [효돈농원]과
+ *    뒤 수신거부 안내는 발송할 때(buildPromoMessage_) 자동으로 붙습니다.
+ *  - 홍보수신자: '홍보수신자' 탭 [전화번호, 이름, 메모, 수신거부, 등록일].
+ *    전화번호는 텍스트 형식('@')으로 저장해 앞자리 0이 안 사라지게 합니다.
+ *    수신거부(TRUE)인 번호는 예약·테스트 발송에서 자동으로 걸러집니다
+ *    (reservePromo·sendPromoTest가 방어적으로 제외합니다).
+ *    listPromoRecipients는 '문자발송큐'에서 전화번호별 최근 발송을 찾아
+ *    lastSend {date, ok}로 함께 돌려주고, 이름·메모는 updatePromoRecipient으로
+ *    고칩니다 (전화번호는 키라서 고치지 않습니다).
+ * ============================================================ */
+var PROMO_VERSION_SHEET_NAME = '홍보문구버전';
+var PROMO_VERSION_HEADERS = ['버전명', '문구', '생성일시'];
+var PROMO_RECIPIENT_SHEET_NAME = '홍보수신자';
+var PROMO_RECIPIENT_HEADERS = ['전화번호', '이름', '메모', '수신거부', '등록일'];
+
+/** '홍보문구버전' 탭을 가져옵니다. create가 true면 없으면 헤더와 함께 만듭니다. */
+function getPromoVersionSheet_(create) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(PROMO_VERSION_SHEET_NAME);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(PROMO_VERSION_SHEET_NAME);
+    sheet.getRange(1, 1, 1, PROMO_VERSION_HEADERS.length).setValues([PROMO_VERSION_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** '홍보수신자' 탭을 가져옵니다. create가 true면 없으면 헤더와 함께 만듭니다. */
+function getPromoRecipientSheet_(create) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(PROMO_RECIPIENT_SHEET_NAME);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(PROMO_RECIPIENT_SHEET_NAME);
+    sheet.getRange(1, 1, 1, PROMO_RECIPIENT_HEADERS.length).setValues([PROMO_RECIPIENT_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** 수신자 한 줄('전화번호 이름' 또는 전화번호만)을 파싱합니다.
+ *  탭·콤마·공백으로 나눕니다. 번호가 공백으로 끊겨 있으면 앞 토큰부터
+ *  최대 3개까지 이어붙여 유효한 번호가 되면 확정하고, 나머지는 이름입니다.
+ *  반환: {phone: 국내 숫자, name: string}. 형식이 틀리면 null. 순수 함수입니다. */
+function parsePromoRecipientLine_(line) {
+  var text = String(line || '').trim();
+  if (!text) return null;
+  var fields = text.split(/[\t,]+/);
+  var phone = '';
+  var name = '';
+  if (fields.length >= 2) {
+    phone = normalizeMobileDigits_(fields[0]);
+    if (!isValidMobileDigits_(phone)) return null;
+    name = fields.slice(1).join(' ').trim();
+  } else {
+    var tokens = text.split(/\s+/);
+    var found = false;
+    for (var take = 1; take <= 3 && take <= tokens.length; take++) {
+      var cand = normalizeMobileDigits_(tokens.slice(0, take).join(''));
+      if (isValidMobileDigits_(cand)) {
+        phone = cand;
+        name = tokens.slice(take).join(' ').trim();
+        found = true;
+        break;
+      }
+    }
+    if (!found) return null;
+  }
+  return { phone: phone, name: name };
+}
+
+/** '홍보수신자' 탭에서 수신거부(TRUE)인 번호(국내 숫자) 목록을 읽습니다. 탭이 없으면 빈 배열. */
+function getOptedOutPhones_() {
+  var sheet = getPromoRecipientSheet_(false);
+  var out = [];
+  if (!sheet) return out;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return out;
+  var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
+  for (var i = 0; i < rows.length; i++) {
+    var flag = String(rows[i][3] || '').trim().toUpperCase();
+    if (flag === 'TRUE' || flag === '1') {
+      var phone = normalizeMobileDigits_(rows[i][0]);
+      if (isValidMobileDigits_(phone)) out.push(phone);
+    }
+  }
+  return out;
+}
+
+/**
+ * 홍보문구 버전 저장 (관리자 전용, 배포 2) — 같은 이름이면 덮어씁니다.
+ * body: { action: 'savePromoVersion', key: 관리자 키, name: 버전명, message: 문구 본문 }
+ * 반환: {ok, name, created}
+ */
+function savePromoVersion(data) {
+  try {
+    checkAdmin(data && data.key);
+    var name = String((data && data.name) || '').trim();
+    if (!name) return respond({ ok: false, error: '버전명을 입력하세요.' });
+    if (name.length > 100) return respond({ ok: false, error: '버전명은 100자까지 입력할 수 있습니다.' });
+    var message = String((data && data.message) || '').trim();
+    if (!message) return respond({ ok: false, error: '저장할 문구를 입력하세요.' });
+    if (message.length > 2000) return respond({ ok: false, error: '문자는 2000자까지 저장할 수 있습니다.' });
+    var sheet = getPromoVersionSheet_(true);
+    var stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    var created = true;
+    try {
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_VERSION_HEADERS.length).getDisplayValues();
+        for (var i = 0; i < rows.length; i++) {
+          if (String(rows[i][0] || '').trim() === name) {
+            sheet.getRange(i + 2, 2).setValue(message);
+            sheet.getRange(i + 2, 3).setValue(stamp);
+            created = false;
+            break;
+          }
+        }
+      }
+      if (created) sheet.appendRow([name, message, stamp]);
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, name: name, created: created });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 홍보문구 버전 목록 (관리자 전용, 배포 2) — 최신 순. 반환: {ok, versions: [{name, message, createdAt}]} */
+function listPromoVersions(data) {
+  try {
+    checkAdmin(data && data.key);
+    var sheet = getPromoVersionSheet_(false);
+    var versions = [];
+    if (sheet) {
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_VERSION_HEADERS.length).getDisplayValues();
+        for (var i = rows.length - 1; i >= 0; i--) {
+          versions.push({
+            name: String(rows[i][0] || ''),
+            message: String(rows[i][1] || ''),
+            createdAt: String(rows[i][2] || '')
+          });
+        }
+      }
+    }
+    return respond({ ok: true, versions: versions });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 홍보문구 버전 삭제 (관리자 전용, 배포 2) — 이름이 정확히 같은 행을 지웁니다. 반환: {ok, name} */
+function deletePromoVersion(data) {
+  try {
+    checkAdmin(data && data.key);
+    var name = String((data && data.name) || '').trim();
+    if (!name) return respond({ ok: false, error: '삭제할 버전명을 알 수 없습니다.' });
+    var sheet = getPromoVersionSheet_(false);
+    if (!sheet) return respond({ ok: false, error: '저장된 버전이 없습니다.' });
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_VERSION_HEADERS.length).getDisplayValues();
+        for (var i = 0; i < rows.length; i++) {
+          if (String(rows[i][0] || '').trim() === name) {
+            sheet.deleteRow(i + 2);
+            return respond({ ok: true, name: name });
+          }
+        }
+      }
+      return respond({ ok: false, error: '없는 버전입니다.' });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 홍보수신자 추가 (관리자 전용, 배포 2)
+ * body: { action: 'addPromoRecipients', key: 관리자 키,
+ *         recipients?: [{phone, name?, memo?}], text?: '한 줄에 전화번호 이름' 붙여넣기 }
+ * 전화번호는 010/011/016/017/018/019 10~11자리만 받고, 이미 있는 번호는
+ * 건너뜁니다 (덮지 않습니다). 전화번호 열은 텍스트 형식('@')으로 저장해
+ * 앞자리 0이 안 사라지게 합니다.
+ * 반환: {ok, added, skipped, errors: [{line, reason}], recipients: [{phone, name, memo}]}
+ */
+function addPromoRecipients(data) {
+  try {
+    checkAdmin(data && data.key);
+    var input = [];
+    if (Array.isArray(data && data.recipients)) input = data.recipients;
+    else if (typeof (data && data.text) === 'string') input = String(data.text).split(/\n/);
+    if (!input.length) return respond({ ok: false, error: '추가할 번호를 입력하세요.' });
+    var parsed = [];
+    var errors = [];
+    for (var i = 0; i < input.length; i++) {
+      var item = input[i];
+      if (typeof item === 'string') {
+        if (!String(item).trim()) continue;
+        var one = parsePromoRecipientLine_(item);
+        if (!one) { errors.push({ line: String(item).trim(), reason: '전화번호 형식이 잘못되었습니다.' }); continue; }
+        parsed.push({ phone: one.phone, name: one.name, memo: '' });
+      } else if (item && typeof item === 'object') {
+        var p = normalizeMobileDigits_(item.phone);
+        if (!isValidMobileDigits_(p)) { errors.push({ line: String(item.phone || ''), reason: '전화번호 형식이 잘못되었습니다.' }); continue; }
+        parsed.push({ phone: p, name: String(item.name || '').trim(), memo: String(item.memo || '').trim() });
+      }
+    }
+    if (!parsed.length && !errors.length) return respond({ ok: false, error: '추가할 번호를 입력하세요.' });
+    var sheet = getPromoRecipientSheet_(true);
+    var stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    var added = [];
+    var skipped = 0;
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var existing = {};
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
+        for (var j = 0; j < rows.length; j++) {
+          var ep = normalizeMobileDigits_(rows[j][0]);
+          if (ep) existing[ep] = true;
+        }
+      }
+      var toAdd = [];
+      var seen = {};
+      for (var k = 0; k < parsed.length; k++) {
+        var pr = parsed[k];
+        if (seen[pr.phone] || existing[pr.phone]) { skipped++; continue; }
+        seen[pr.phone] = true;
+        toAdd.push(pr);
+      }
+      if (toAdd.length) {
+        // 전화번호 열(1열)은 텍스트 형식으로 둡니다 — 앞자리 0 유지.
+        sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@');
+        var startRow = sheet.getLastRow() + 1;
+        var values = [];
+        for (var m = 0; m < toAdd.length; m++) {
+          values.push([toAdd[m].phone, toAdd[m].name, toAdd[m].memo, 'FALSE', stamp]);
+          added.push({ phone: toAdd[m].phone, name: toAdd[m].name, memo: toAdd[m].memo });
+        }
+        sheet.getRange(startRow, 1, values.length, PROMO_RECIPIENT_HEADERS.length).setValues(values);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, added: added.length, skipped: skipped, errors: errors, recipients: added });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** '문자발송큐' 행들에서 전화번호별 최근 발송을 찾습니다.
+ *  행: [예약일시, 번호, 메시지, 상태, 처리시작, 발송일시, 오류].
+ *  상태 '발송완료'·'실패'만 보고, 날짜는 발송일시(없으면 예약일시) 기준
+ *  가장 최근 것만 남깁니다. 반환: {국내숫자: {date, ok}} — 순수 함수입니다. */
+function latestSendByPhone_(queueRows) {
+  var map = {};
+  for (var i = 0; i < queueRows.length; i++) {
+    var r = queueRows[i] || [];
+    var status = String(r[3] || '');
+    if (status !== '발송완료' && status !== '실패') continue;
+    var phone = normalizeMobileDigits_(r[1]);
+    if (!isValidMobileDigits_(phone)) continue;
+    var date = String(r[5] || r[0] || '');
+    if (!date) continue;
+    var cur = map[phone];
+    if (!cur || date > cur.date) map[phone] = { date: date, ok: status === '발송완료' };
+  }
+  return map;
+}
+
+/** 홍보수신자 목록 (관리자 전용, 배포 2) — 등록 순. 반환: {ok, recipients: [{row, phone, name, memo, optOut, createdAt, lastSend}]} */
+function listPromoRecipients(data) {
+  try {
+    checkAdmin(data && data.key);
+    var sheet = getPromoRecipientSheet_(false);
+    var recipients = [];
+    if (sheet) {
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
+        for (var i = 0; i < rows.length; i++) {
+          var flag = String(rows[i][3] || '').trim().toUpperCase();
+          recipients.push({
+            row: i + 2,
+            phone: String(rows[i][0] || ''),
+            name: String(rows[i][1] || ''),
+            memo: String(rows[i][2] || ''),
+            optOut: flag === 'TRUE' || flag === '1',
+            createdAt: String(rows[i][4] || '')
+          });
+        }
+      }
+    }
+    // 최근 발송: '문자발송큐'에서 전화번호별 최근 발송(발송완료/실패)을 찾아 붙입니다.
+    // 큐 탭이 없어도 수신자 목록은 그대로 돌려줍니다.
+    var lastSendByPhone = {};
+    try {
+      var ss = SpreadsheetApp.openById(SHEET_ID);
+      var qSheet = ss.getSheetByName(SMS_QUEUE_SHEET_NAME);
+      if (qSheet && qSheet.getLastRow() >= 2) {
+        var qRows = qSheet.getRange(2, 1, qSheet.getLastRow() - 1, SMS_QUEUE_HEADERS.length).getDisplayValues();
+        lastSendByPhone = latestSendByPhone_(qRows);
+      }
+    } catch (e) {
+      lastSendByPhone = {};
+    }
+    for (var ri = 0; ri < recipients.length; ri++) {
+      var key = normalizeMobileDigits_(recipients[ri].phone);
+      recipients[ri].lastSend = lastSendByPhone[key] || null;
+    }
+    return respond({ ok: true, recipients: recipients });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 홍보수신자 삭제 (관리자 전용, 배포 2) — 행 번호(row) 또는 전화번호(phone)로 지웁니다. 반환: {ok, row} */
+function deletePromoRecipient(data) {
+  try {
+    checkAdmin(data && data.key);
+    var sheet = getPromoRecipientSheet_(false);
+    if (!sheet) return respond({ ok: false, error: '저장된 수신자가 없습니다.' });
+    var row = Number((data && data.row) || 0);
+    var phone = normalizeMobileDigits_((data && data.phone) || '');
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) return respond({ ok: false, error: '없는 수신자입니다.' });
+      if (row >= 2 && row <= lastRow) {
+        sheet.deleteRow(row);
+        return respond({ ok: true, row: row });
+      }
+      if (phone) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
+        for (var i = 0; i < rows.length; i++) {
+          if (normalizeMobileDigits_(rows[i][0]) === phone) {
+            sheet.deleteRow(i + 2);
+            return respond({ ok: true, row: i + 2 });
+          }
+        }
+      }
+      return respond({ ok: false, error: '없는 수신자입니다.' });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 홍보수신자 수신거부 설정 (관리자 전용, 배포 2) — 행 번호(row) 또는 전화번호(phone)로 찾습니다. 반환: {ok, row, phone, optOut} */
+function setPromoRecipientOptOut(data) {
+  try {
+    checkAdmin(data && data.key);
+    var optOut = !!(data && data.optOut);
+    var sheet = getPromoRecipientSheet_(false);
+    if (!sheet) return respond({ ok: false, error: '저장된 수신자가 없습니다.' });
+    var row = Number((data && data.row) || 0);
+    var phone = normalizeMobileDigits_((data && data.phone) || '');
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) return respond({ ok: false, error: '없는 수신자입니다.' });
+      var target = 0;
+      if (row >= 2 && row <= lastRow) target = row;
+      else if (phone) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
+        for (var i = 0; i < rows.length; i++) {
+          if (normalizeMobileDigits_(rows[i][0]) === phone) { target = i + 2; break; }
+        }
+      }
+      if (!target) return respond({ ok: false, error: '없는 수신자입니다.' });
+      sheet.getRange(target, 4).setValue(optOut ? 'TRUE' : 'FALSE');
+      return respond({
+        ok: true,
+        row: target,
+        phone: String(sheet.getRange(target, 1).getDisplayValue() || ''),
+        optOut: optOut
+      });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 홍보수신자 이름·메모 수정 (관리자 전용, 배포 2) — 인라인 편집용.
+ *  body: { action: 'updatePromoRecipient', key: 관리자 키, row: 행 번호(또는 phone),
+ *          name: 이름, memo: 메모 } — 전화번호는 키라서 고치지 않습니다.
+ *  반환: {ok, row, phone, name, memo} */
+function updatePromoRecipient(data) {
+  try {
+    checkAdmin(data && data.key);
+    var name = String((data && data.name) || '').trim();
+    var memo = String((data && data.memo) || '').trim();
+    if (name.length > 50) return respond({ ok: false, error: '이름은 50자까지 입력할 수 있습니다.' });
+    if (memo.length > 200) return respond({ ok: false, error: '메모는 200자까지 입력할 수 있습니다.' });
+    var sheet = getPromoRecipientSheet_(false);
+    if (!sheet) return respond({ ok: false, error: '저장된 수신자가 없습니다.' });
+    var row = Number((data && data.row) || 0);
+    var phone = normalizeMobileDigits_((data && data.phone) || '');
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) return respond({ ok: false, error: '없는 수신자입니다.' });
+      var target = 0;
+      if (row >= 2 && row <= lastRow) target = row;
+      else if (phone) {
+        var rows = sheet.getRange(2, 1, lastRow - 1, PROMO_RECIPIENT_HEADERS.length).getDisplayValues();
+        for (var i = 0; i < rows.length; i++) {
+          if (normalizeMobileDigits_(rows[i][0]) === phone) { target = i + 2; break; }
+        }
+      }
+      if (!target) return respond({ ok: false, error: '없는 수신자입니다.' });
+      sheet.getRange(target, 2).setValue(name);
+      sheet.getRange(target, 3).setValue(memo);
+      return respond({
+        ok: true,
+        row: target,
+        phone: String(sheet.getRange(target, 1).getDisplayValue() || ''),
+        name: name,
+        memo: memo
+      });
+    } finally {
+      lock.releaseLock();
+    }
   } catch (err) {
     return respond({ ok: false, error: String(err) });
   }
@@ -1364,12 +2858,19 @@ function getSheet() {
   return ss.getSheets()[0];
 }
 
-/** 1행 헤더가 비어 있으면 채웁니다 (시트를 새로 만들어도 그대로 동작) */
+/** 1행 헤더가 비어 있으면 채웁니다 (시트를 새로 만들어도 그대로 동작).
+ *  이미 있는 시트에 새 열(우편번호)이 없으면 뒤에 덧붙입니다 — 기존 열은 안 건드립니다. */
 function ensureHeader(sheet) {
   var firstCell = sheet.getRange(1, 1).getValue();
   if (!firstCell) {
     sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
     sheet.setFrozenRows(1);
+    return;
+  }
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < HEADERS.length) {
+    var missing = HEADERS.slice(lastCol);
+    sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
   }
 }
 
@@ -1379,6 +2880,19 @@ function safe(value) {
   var s = String(value);
   if (/^[=+\-@]/.test(s)) return "'" + s;
   return s;
+}
+
+/** O열(15) '상품별 배송지' JSON 텍스트를 배열로 바꿉니다. 없거나 깨진 값이면 빈 배열.
+ *  trackGet·adminList가 돌려주는 deliveryOverrides가 이 형태입니다. */
+function parseDeliveryOverrides_(text) {
+  if (!text) return [];
+  try {
+    var arr = JSON.parse(String(text));
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(function (d) { return d && d.itemId; });
+  } catch (err) {
+    return [];
+  }
 }
 
 /** 주문 알림 메일 (NOTIFY_EMAIL 이 비어 있으면 건너뜁니다) */
@@ -1441,5 +2955,9 @@ function formatSheet() {
   sheet.setColumnWidth(11, 220);  // 요청사항
   sheet.setColumnWidth(12, 80);   // 입금확인
   sheet.setColumnWidth(13, 140);  // 송장번호
+  sheet.setColumnWidth(14, 90);   // 우편번호
+  sheet.setColumnWidth(15, 260);  // 상품별 배송지 (JSON 텍스트)
   sheet.getRange(2, 4, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('#,##0');
+  sheet.getRange(2, 14, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@'); // 우편번호 앞자리 0 유지
+  sheet.getRange(2, 15, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@'); // 상품별 배송지 JSON 텍스트 형식 유지
 }
