@@ -182,7 +182,7 @@
     var key = getKey();
     if (!key) { setStatus(listStatus, "관리자 키를 입력하세요.", true); return; }
     setStatus(listStatus, "주문을 불러오는 중입니다…");
-    fetch(url + "?action=list&key=" + encodeURIComponent(key), { credentials: "include" })
+    fetch(url + "?action=list&key=" + encodeURIComponent(key))
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data || !data.ok) throw new Error((data && data.error) || "목록을 불러오지 못했습니다. 본인 계정으로 로그인했는지 확인하세요.");
@@ -265,7 +265,6 @@
     btn.textContent = "저장 중…";
     fetch(url, {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: "update", row: row, paid: paid, tracking: tracking, key: getKey() })
     })
