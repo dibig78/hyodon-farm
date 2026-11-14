@@ -30,7 +30,7 @@
   .card h2{font-family:var(--serif); font-size:18px; margin:0 0 6px}
   .card p{margin:0; font-size:14px; color:var(--muted)}
   label{display:block; font-size:13.5px; font-weight:700; margin-bottom:6px}
-  input[type="text"], input[type="search"]{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:15px; background:#fff}
+  input[type="text"], input[type="search"], input[type="password"]{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:15px; background:#fff}
   input:focus{outline:0; border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14)}
   .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
   .row .grow{flex:1; min-width:220px}
@@ -82,11 +82,11 @@
 </header>
 
 <main class="wrap">
-  <p class="warn"><b>주의:</b> 이 페이지는 홈페이지에 링크가 없습니다. 주소(<code>hyodon-farm/admin.html</code>)를 손님에게 공유하지 마세요. 주문 목록은 본인 구글 계정으로 로그인한 뒤에만 열립니다. 로그인이 안 되면 Apps Script 배포 설정(액세스 권한)을 먼저 확인하세요.</p>
+  <p class="warn"><b>주의:</b> 이 페이지는 홈페이지에 링크가 없습니다. 주소(<code>hyodon-farm/admin.html</code>)를 손님에게 공유하지 마세요. 주문 목록은 관리자 키를 입력한 뒤에만 열립니다. 키는 Apps Script 편집기의 ADMIN_KEY와 같아야 합니다.</p>
 
   <section class="card" id="setupCard">
     <h2>연결 설정</h2>
-    <p>Apps Script 웹앱 주소(<code>/exec</code>로 끝나는 주소)를 한 번만 입력하면 이 기기에 저장됩니다. 아직 배포 전이면 비워 두고 아래 안내대로 먼저 배포하세요.</p>
+    <p>Apps Script 웹앱 주소(<code>/exec</code>로 끝나는 주소)와 관리자 키를 한 번만 입력하면 이 기기에 저장됩니다. 관리자 키는 손님에게 절대 알려주지 마세요.</p>
     <div class="row" style="margin-top:12px">
       <div class="grow">
         <label for="scriptUrl">Apps Script 웹앱 URL</label>
@@ -94,7 +94,15 @@
       </div>
       <button class="btn" type="button" id="saveUrlBtn">저장하고 주문 불러오기</button>
     </div>
+    <div class="row" style="margin-top:12px">
+      <div class="grow">
+        <label for="adminKey">관리자 키</label>
+        <input type="password" id="adminKey" placeholder="Apps Script 편집기의 ADMIN_KEY와 같은 값" autocomplete="off">
+      </div>
+    </div>
+    <p class="status" id="keyStatus"></p>
     <p class="status" id="setupStatus"></p>
+    <p class="status" id="listStatus"></p>
   </section>
 
   <section id="board" hidden>
@@ -120,7 +128,6 @@
       <button type="button" data-filter="paid">입금 완료</button>
     </div>
 
-    <p class="status" id="listStatus"></p>
     <div id="orderList"></div>
   </section>
 </main>
@@ -135,18 +142,23 @@
 (function () {
   "use strict";
   var LS_KEY = "hyodon-admin-script-url";
+  var LS_KEY_KEY = "hyodon-admin-key";
   var $ = function (s) { return document.querySelector(s); };
   var orders = [];
   var filter = "all";
   var query = "";
 
   var scriptUrlInput = $("#scriptUrl");
+  var adminKeyInput = $("#adminKey");
   var setupStatus = $("#setupStatus");
   var listStatus = $("#listStatus");
 
   function getUrl() {
     var v = (scriptUrlInput.value || "").trim() || localStorage.getItem(LS_KEY) || "";
     return v.replace(/\/$/, "");
+  }
+  function getKey() {
+    return (adminKeyInput.value || "").trim() || localStorage.getItem(LS_KEY_KEY) || "";
   }
   function won(n) { return Number(n || 0).toLocaleString("ko-KR") + "원"; }
   function esc(s) {
@@ -167,8 +179,10 @@
   function loadOrders() {
     var url = getUrl();
     if (!url) { setStatus(setupStatus, "Apps Script 웹앱 URL을 먼저 입력하세요. 배포 방법은 저장소의 apps-script/README.md를 보세요.", true); return; }
+    var key = getKey();
+    if (!key) { setStatus(listStatus, "관리자 키를 입력하세요.", true); return; }
     setStatus(listStatus, "주문을 불러오는 중입니다…");
-    fetch(url + "?action=list", { credentials: "include" })
+    fetch(url + "?action=list&key=" + encodeURIComponent(key), { credentials: "include" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data || !data.ok) throw new Error((data && data.error) || "목록을 불러오지 못했습니다. 본인 계정으로 로그인했는지 확인하세요.");
@@ -180,7 +194,7 @@
       .catch(function (err) {
         $("#board").hidden = true;
         setStatus(listStatus, "불러오기 실패: " + err.message, true);
-        setStatus(setupStatus, "실패했습니다. 웹앱 배포 설정이 '액세스: Google 계정이 있는 모든 사용자'인지, Code.gs에 관리자 기능이 들어있는지 확인하세요.", true);
+        setStatus(setupStatus, "실패했습니다. 관리자 키가 Apps Script 편집기의 ADMIN_KEY와 같은지, 웹앱 주소가 관리자용 배포 주소인지 확인하세요.", true);
       });
   }
 
@@ -253,7 +267,7 @@
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "update", row: row, paid: paid, tracking: tracking })
+      body: JSON.stringify({ action: "update", row: row, paid: paid, tracking: tracking, key: getKey() })
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -269,8 +283,11 @@
 
   $("#saveUrlBtn").addEventListener("click", function () {
     var url = (scriptUrlInput.value || "").trim();
+    var key = (adminKeyInput.value || "").trim();
     if (!url) { setStatus(setupStatus, "URL을 입력하세요.", true); return; }
+    if (!key) { setStatus(setupStatus, "관리자 키를 입력하세요.", true); return; }
     localStorage.setItem(LS_KEY, url);
+    localStorage.setItem(LS_KEY_KEY, key);
     setStatus(setupStatus, "저장했습니다. 주문을 불러옵니다.");
     loadOrders();
   });
@@ -292,6 +309,8 @@
   });
 
   var saved = localStorage.getItem(LS_KEY) || "";
+  var savedKey = localStorage.getItem(LS_KEY_KEY) || "";
+  if (savedKey) { adminKeyInput.value = savedKey; }
   if (saved) {
     scriptUrlInput.value = saved;
     loadOrders();
