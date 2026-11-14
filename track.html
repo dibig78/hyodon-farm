@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fdf8f1">
 <meta name="robots" content="noindex, nofollow">
 <title>효돈농원 | 주문·배송 조회</title>
 <meta name="description" content="효돈농원 주문 배송 조회 — 전화번호로 내 주문과 송장번호를 확인하세요.">
@@ -19,6 +20,11 @@
   *{box-sizing:border-box}
   body{margin:0; font-family:var(--sans); color:var(--ink); background:var(--page); line-height:1.6}
   a{color:inherit}
+  .skip{position:absolute; left:-9999px; top:0; background:var(--ink); color:#fff; padding:10px 16px; border-radius:0 0 12px 0; font-weight:700; z-index:99}
+  .skip:focus{left:0}
+  #main:focus{outline:none}
+  h1, h2, h3{text-wrap:balance}
+  button, input, select, a{touch-action:manipulation}
   .wrap{max-width:760px; margin:0 auto; padding:0 16px}
   header{background:#2a2018; color:#fdf6ec; padding:22px 0 18px}
   header h1{font-family:var(--serif); font-size:22px; margin:0}
@@ -30,7 +36,8 @@
   .card p{margin:0; font-size:14px; color:var(--muted)}
   label{display:block; font-size:13.5px; font-weight:700; margin-bottom:6px}
   input[type="tel"]{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:16px; background:#fff}
-  input:focus{outline:0; border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14)}
+  input:focus{border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14)}
+  input:focus-visible, button:focus-visible, a:focus-visible{outline:2px solid var(--orange); outline-offset:2px}
   .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
   .row .grow{flex:1; min-width:200px}
   .btn{display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 20px; border-radius:999px; border:1px solid transparent; font:inherit; font-weight:700; font-size:15px; cursor:pointer; text-decoration:none; background:var(--orange); color:#fff}
@@ -48,7 +55,7 @@
   .order__head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:baseline}
   .order__head h3{margin:0; font-size:16.5px}
   .order__head time{font-size:13px; color:var(--muted); white-space:nowrap}
-  .order__amount{font-size:18px; font-weight:800}
+  .order__amount{font-size:18px; font-weight:800; font-variant-numeric:tabular-nums}
   .steps{list-style:none; margin:14px 0 0; padding:0; display:flex; gap:0}
   .steps li{flex:1; text-align:center; font-size:13px; color:var(--muted); position:relative; padding-top:22px}
   .steps li::before{content:""; position:absolute; top:6px; left:50%; transform:translateX(-50%); width:12px; height:12px; border-radius:50%; background:#ddd0bd; border:2px solid #fff; box-shadow:0 0 0 1px #ddd0bd}
@@ -60,7 +67,7 @@
   .steps li.now{color:var(--orange-dark); font-weight:700}
   .steps li.now::before{background:var(--orange); box-shadow:0 0 0 1px var(--orange)}
   .trackbox{margin-top:14px; background:var(--surface-alt); border:1px solid var(--line-strong); border-radius:12px; padding:12px 14px}
-  .trackbox .trackno{font-size:22px; font-weight:800; letter-spacing:2px}
+  .trackbox .trackno{font-size:22px; font-weight:800; letter-spacing:2px; font-variant-numeric:tabular-nums}
   .trackbox .row{margin-top:10px}
   .empty{text-align:center; color:var(--muted); padding:28px 0}
   footer{border-top:1px solid var(--line); padding:20px 0 40px; font-size:13px; color:var(--muted)}
@@ -68,6 +75,7 @@
 </style>
 </head>
 <body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
 <header>
   <div class="wrap">
     <h1>효돈농원 배송 조회</h1>
@@ -76,18 +84,18 @@
   </div>
 </header>
 
-<main class="wrap">
+<main class="wrap" id="main" tabindex="-1">
   <section class="card">
     <h2>전화번호로 조회</h2>
     <p>주문자 또는 받는분의 전화번호를 입력하세요. 본인 주문만 보여집니다.</p>
     <div class="row" style="margin-top:12px">
       <div class="grow">
         <label for="phoneInput">전화번호</label>
-        <input type="tel" id="phoneInput" placeholder="010-1234-5678" autocomplete="tel" inputmode="tel">
+        <input type="tel" id="phoneInput" name="phone" placeholder="010-1234-5678" autocomplete="tel" inputmode="tel" spellcheck="false">
       </div>
       <button class="btn" type="button" id="searchBtn" style="flex:1">조회하기</button>
     </div>
-    <p class="status" id="trackStatus"></p>
+    <p class="status" id="trackStatus" aria-live="polite"></p>
   </section>
 
   <div id="resultList"></div>
