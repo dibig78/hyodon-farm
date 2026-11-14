@@ -119,7 +119,7 @@
   var statusEl = $("#trackStatus");
   var resultList = $("#resultList");
 
-  function won(n) { return Number(n || 0).toLocaleString("ko-KR") + "원"; }
+  function won(n) { return Number(String(n == null ? 0 : n).replace(/[^0-9]/g, "") || 0).toLocaleString("ko-KR") + "원"; }
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
