@@ -132,6 +132,8 @@ function doPost(e) {
 function doGet(e) {
   // 관리자 주문 목록 조회 (admin.html에서 ?action=list 로 호출)
   if (e && e.parameter && e.parameter.action === 'list') return adminList(e.parameter.key);
+  // 손님용 배송 조회 (track.html에서 ?action=track&phone=... 로 호출, 키 없음)
+  if (e && e.parameter && e.parameter.action === 'track') return trackGet(e.parameter.phone);
   var status = 'ok';
   var message = '효돈농원 주문 접수 서비스가 동작 중입니다.';
   try {
@@ -163,6 +165,35 @@ function checkAdmin(key) {
   try { me = Session.getActiveUser().getEmail(); } catch (err) { me = ''; }
   if (me && me.toLowerCase() === String(OWNER_EMAIL).toLowerCase()) return;
   throw new Error('관리자 확인이 필요합니다. 관리자 키를 입력하거나 본인 Google 계정으로 로그인하세요.');
+}
+
+// 손님용 조회: 전화번호(주문자 또는 받는분)가 일치하는 주문만,
+// 이름·연락처·주소를 제외한 최소 정보만 돌려준다.
+function trackGet(phone) {
+  try {
+    var digits = String(phone || '').replace(/[^0-9]/g, '');
+    if (digits.length < 10 || digits.length > 11) return respond({ ok: false, error: '전화번호를 정확히 입력하세요.' });
+    var sheet = getSheet();
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return respond({ ok: true, orders: [] });
+    var values = sheet.getRange(2, 1, lastRow - 1, 13).getDisplayValues();
+    var out = [];
+    for (var i = 0; i < values.length; i++) {
+      var r = values[i];
+      var ordPhone = String(r[6] || '').replace(/[^0-9]/g, '');
+      var recvPhone = String(r[8] || '').replace(/[^0-9]/g, '');
+      if (ordPhone !== digits && recvPhone !== digits) continue;
+      out.push({
+        datetime: r[0], product: r[1], qty: Number(r[2] || 0), amount: Number(r[3] || 0),
+        receiver: r[7], paid: r[11] === '확인', tracking: r[12] || ''
+      });
+      if (out.length >= 20) break;
+    }
+    out.sort(function (a, b) { return String(b.datetime).localeCompare(String(a.datetime)); });
+    return respond({ ok: true, orders: out });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
 }
 
 function adminList(key) {
@@ -210,7 +241,8 @@ function adminUpdateBatch(data) {
         var row = Number(u.row || 0);
         if (!row || row < 2 || row > lastRow) continue;
         sheet.getRange(row, 12).setValue(u.paid ? '확인' : '');
-        sheet.getRange(row, 13).setValue(safe(u.tracking));
+        // M열(13): 송장번호 — 앞자리 0이 사라지지 않게 텍스트 형식으로 저장
+        sheet.getRange(row, 13).setNumberFormat('@').setValue(safe(u.tracking));
       }
     } finally {
       lock.releaseLock();
@@ -247,8 +279,8 @@ function adminUpdate(data) {
     try {
       // L열(12): 입금확인 — 체크되면 '확인'이라고 적고, 해제되면 비웁니다.
       sheet.getRange(row, 12).setValue(data.paid ? '확인' : '');
-      // M열(13): 송장번호
-      sheet.getRange(row, 13).setValue(safe(data.tracking));
+      // M열(13): 송장번호 — 앞자리 0이 사라지지 않게 텍스트 형식으로 저장
+      sheet.getRange(row, 13).setNumberFormat('@').setValue(safe(data.tracking));
     } finally {
       lock.releaseLock();
     }
