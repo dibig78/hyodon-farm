@@ -171,9 +171,10 @@ function doPost(e) {
     if (data.action === 'getNotifyPhone') return getNotifyPhone(data);
     if (data.action === 'setNotifyPhone') return setNotifyPhone(data);
 
-    // 홍보 예약 편집·취소 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
+    // 홍보 예약 편집·취소·다시 보내기 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
     if (data.action === 'updatePromo') return updatePromo(data);
     if (data.action === 'cancelPromo') return cancelPromo(data);
+    if (data.action === 'retryPromo') return retryPromo(data);
 
     // 홍보문구 버전 저장·목록·삭제 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
     if (data.action === 'savePromoVersion') return savePromoVersion(data);
@@ -418,7 +419,7 @@ function readCatalogByName_() {
 /** 주문 요약 텍스트("이름 N박스, 이름 N박스")를 상품별 내역으로 풉니다.
  *  카탈로그와 이름이 맞으면 id·단가·금액도 채웁니다 (상품별 통계용).
  *  풀이 안 되는 부분은 이름 통째로 수량 1건으로 둡니다. */
-function parseOrderItems_(summary, catalogByName) {
+function parseOrderItems_(summary, catalogByName, orderAmount) {
   var items = [];
   var text = String(summary || '').trim();
   if (!text) return items;
@@ -438,6 +439,32 @@ function parseOrderItems_(summary, catalogByName) {
       amount: cat ? cat.price * qty : 0
     });
   }
+  // N-P1-6 (gstack 오디트 2026-11-15): 상품별 금액은 주문 당시 금액으로
+  // 맞춥니다. 카탈로그 가격을 나중에 바꾸면 현재 가격으로 과거 통계가
+  // 다시 계산되는 문제를 막기 위해, 주문 당시 총액(orderAmount)에
+  // 맞춰 비례 배분합니다. 단일 상품이면 정확히 총액이 되고, 여러
+  // 상품이면 합계가 총액과 일치합니다 (반올림 나머지는 가장 큰 항목에
+  // 몰아줍니다). price(카탈로그 단가)는 그대로 둡니다.
+  if (typeof orderAmount === 'number' && orderAmount > 0 && items.length) {
+    var rawTotal = 0;
+    for (var j = 0; j < items.length; j++) rawTotal += items[j].amount;
+    if (rawTotal > 0) {
+      var bigIdx = 0;
+      for (var k = 0; k < items.length; k++) {
+        if (items[k].amount > items[bigIdx].amount) bigIdx = k;
+      }
+      var acc = 0;
+      for (var a = 0; a < items.length; a++) {
+        if (a === bigIdx) continue;
+        items[a].amount = Math.round(items[a].amount * orderAmount / rawTotal);
+        acc += items[a].amount;
+      }
+      items[bigIdx].amount = orderAmount - acc;
+    } else {
+      // 카탈로그에 없는 상품이라 금액이 0이면 총액을 첫 항목에 둡니다.
+      items[0].amount = orderAmount;
+    }
+  }
   return items;
 }
 
@@ -454,11 +481,12 @@ function adminList(key) {
       for (var i = 0; i < values.length; i++) {
         var r = values[i];
         if (!String(r[0] || '').trim() && !String(r[5] || '').trim()) continue;
+        var orderAmount = Number(String(r[3] || '0').replace(/[^0-9]/g, '') || 0);
         orders.push({
           row: i + 2,
           datetime: r[0], product: r[1], qty: Number(r[2] || 0),
-          amount: Number(String(r[3] || '0').replace(/[^0-9]/g, '') || 0),
-          items: parseOrderItems_(r[1], catalogByName),
+          amount: orderAmount,
+          items: parseOrderItems_(r[1], catalogByName, orderAmount),
           depositor: r[4], orderer: r[5], ordererPhone: r[6],
           receiver: r[7], receiverPhone: r[8], receiverAddress: r[9],
           zipcode: r[13] || '',
@@ -475,6 +503,33 @@ function adminList(key) {
   }
 }
 
+/**
+ * N-P1-8 (gstack 오디트 2026-11-15): 행 번호 식별 안전장치 — 쓰기 전에
+ * 해당 행이 호출자가 기대한 주문인지 확인합니다. 다른 탭·사람이 주문을
+ * 지우면 행 번호가 밀려, 범위 검사만으로는 엉뚱한 주문에 쓸 수 있습니다.
+ * 호출자가 보낸 expectDate(주문일시, A열)·expectPhone(주문자 또는 받는분
+ * 전화번호, G열·I열)이 있으면 그 행의 값과 대조하고, 다르면 오류를
+ * 돌려줍니다. 지문 없이 온 오래된 호출은 그대로 허용합니다.
+ * 반환: null(일치·지문 없음) 또는 오류 메시지.
+ */
+function checkRowFingerprint_(sheet, row, data) {
+  var expectDate = String((data && data.expectDate) || '').trim();
+  var expectPhone = String((data && data.expectPhone) || '').replace(/[^0-9]/g, '');
+  if (!expectDate && !expectPhone) return null;
+  var values = sheet.getRange(row, 1, 1, 9).getDisplayValues()[0];
+  if (expectDate && String(values[0] || '').trim() !== expectDate) {
+    return '주문 정보가 바뀌었습니다. 목록을 새로고침해 주세요.';
+  }
+  if (expectPhone) {
+    var orderer = String(values[6] || '').replace(/[^0-9]/g, '');
+    var receiver = String(values[8] || '').replace(/[^0-9]/g, '');
+    if (orderer !== expectPhone && receiver !== expectPhone) {
+      return '주문 정보가 바뀌었습니다. 목록을 새로고침해 주세요.';
+    }
+  }
+  return null;
+}
+
 function adminUpdateBatch(data) {
   try {
     checkAdmin(data && data.key);
@@ -485,6 +540,17 @@ function adminUpdateBatch(data) {
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
+      // N-P1-8: lastRow는 락 안에서 다시 읽습니다 (락 밖 값은 삭제가
+      // 끼면 이미 밀려 있을 수 있습니다).
+      lastRow = sheet.getLastRow();
+      // 지문은 쓰기 전에 전부 확인하고, 하나라도 다르면 아무것도 안 씁니다.
+      for (var v = 0; v < updates.length; v++) {
+        var uv = updates[v] || {};
+        var rv = Number(uv.row || 0);
+        if (!rv || rv < 2 || rv > lastRow) continue;
+        var fpv = checkRowFingerprint_(sheet, rv, uv);
+        if (fpv) return respond({ ok: false, error: fpv });
+      }
       for (var i = 0; i < updates.length; i++) {
         var u = updates[i] || {};
         var row = Number(u.row || 0);
@@ -535,6 +601,9 @@ function adminDelete(data) {
       // 행 범위 검사는 락 안에서 다시 합니다 (검사-삭제 사이에 다른 삭제가
       // 행 번호를 밀 수 있어서, 락 밖 검사는 믿을 수 없습니다).
       if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+      // N-P1-8: 지문이 있으면 이 행이 지우려는 주문인지 확인합니다.
+      var fpDel = checkRowFingerprint_(sheet, row, data);
+      if (fpDel) return respond({ ok: false, error: fpDel });
       // 삭제 전에 행 전체 내용을 '삭제기록' 탭에 남깁니다 (복구용).
       var values = sheet.getRange(row, 1, 1, HEADERS.length).getDisplayValues()[0];
       var logSheet = getDeleteLogSheet_();
@@ -560,6 +629,11 @@ function adminUpdate(data) {
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
+      // N-P1-8: 범위와 지문은 락 안에서 다시 확인합니다 (락 밖 검사는
+      // 그 사이에 행이 밀리면 믿을 수 없습니다).
+      if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+      var fpUpd = checkRowFingerprint_(sheet, row, data);
+      if (fpUpd) return respond({ ok: false, error: fpUpd });
       // L열(12): 입금확인 — 체크되면 '확인'이라고 적고, 해제되면 비웁니다.
       sheet.getRange(row, 12).setValue(data.paid ? '확인' : '');
       // M열(13): 송장번호 — 앞자리 0이 사라지지 않게 텍스트 형식으로 저장
@@ -592,6 +666,10 @@ function setSplitTracking(data) {
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
+      // N-P1-8: 범위와 지문은 락 안에서 다시 확인합니다.
+      if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+      var fpSplit = checkRowFingerprint_(sheet, row, data);
+      if (fpSplit) return respond({ ok: false, error: fpSplit });
       var raw = sheet.getRange(row, 15).getDisplayValue();
       var overrides = parseDeliveryOverrides_(raw);
       if (!overrides.length) return respond({ ok: false, error: '상품별 배송지가 없는 주문입니다.' });
@@ -735,16 +813,37 @@ function bulkImportTracking(data) {
               candidates.push({ row: cr, product: targets[c].order.product, receiver: targets[c].order.receiver });
             }
           }
-          var multiOrder = candidates.length > 1;
-          results.push({
-            phone: phone, trackingNumber: tracking, status: 'ambiguous',
-            message: multiOrder
-              ? '같은 전화번호로 주문이 여러 건 있습니다. 개별 입력으로 넣어주세요.'
-              : '같은 주문에 같은 전화번호로 받는 곳이 여러 곳입니다. 개별 입력으로 넣어주세요.',
-            candidates: candidates
-          });
-          summary.ambiguous++;
-          continue;
+          if (candidates.length > 1) {
+            results.push({
+              phone: phone, trackingNumber: tracking, status: 'ambiguous',
+              message: '같은 전화번호로 주문이 여러 건 있습니다. 개별 입력으로 넣어주세요.',
+              candidates: candidates
+            });
+            summary.ambiguous++;
+            continue;
+          }
+          // N-P1-5 (gstack 오디트 2026-11-15): 같은 주문 안의 대표+분리
+          // 배송지가 같은 전화번호면 모호하지 않습니다 — 같은 사람이 받는
+          // 주문이니까, 송장이 없는 곳 하나를 골라 넣습니다. 송장 없는
+          // 곳이 여러 곳이면 대표(기본 배송지)를 먼저 씁니다. 전부 이미
+          // 송장이 있으면 already_tracked로 돌려줍니다. 다른 주문이
+          // 섞인 경우(여러 행)는 위에서 그대로 ambiguous입니다.
+          var open = [];
+          for (var oi = 0; oi < targets.length; oi++) {
+            var t = targets[oi];
+            var has = t.kind === 'main' ? !!t.order.tracking : !!(t.group.trackingNumber || '');
+            if (!has) open.push(t);
+          }
+          if (!open.length) {
+            results.push({ phone: phone, trackingNumber: tracking, status: 'already_tracked', row: targets[0].order.row, product: targets[0].order.product, receiver: targets[0].order.receiver, message: '이미 송장번호가 있습니다. 덮어쓰지 않았습니다.' });
+            summary.already_tracked++;
+            continue;
+          }
+          var chosen = open[0];
+          for (var ci = 0; ci < open.length; ci++) {
+            if (open[ci].kind === 'main') { chosen = open[ci]; break; }
+          }
+          targets = [chosen];
         }
         var one = targets[0];
         var order = one.order;
@@ -1256,6 +1355,14 @@ function issueLogenTracking(data) {
     if (shipment.alreadyTracked) {
       return respond({ ok: false, error: '이미 송장번호가 있습니다. (' + shipment.trackingNumber + ') 새로 발급하지 않았습니다.' });
     }
+    // N-P1-2: 수량이 0인 배송지에는 송장을 발급하지 않습니다. 기본 배송지
+    // 수량이 0이면 모든 상품이 별도 배송지로 나뉜 주문 — 대표 송장을
+    // 발급하면 0박스짜리 25kg 운송장이 만들어집니다.
+    if (shipment.qty <= 0) {
+      return respond({ ok: false, error: shipment.kind === 'main'
+        ? '기본 배송지에 보낼 상품이 없습니다. 모든 상품이 별도 배송지로 나뉘었습니다.'
+        : '이 배송지에 보낼 상품이 없습니다.' });
+    }
     var bodyRes = buildLogenRequestBody_(cfg, shipment);
     if (bodyRes.error) return respond({ ok: false, error: bodyRes.error });
     // 재검사·API 호출·기록을 하나의 락 구간 안에서 직렬화합니다.
@@ -1266,6 +1373,13 @@ function issueLogenTracking(data) {
       if (fresh.error) return respond({ ok: false, error: fresh.error });
       if (fresh.alreadyTracked) {
         return respond({ ok: false, error: '이미 송장번호가 있습니다. (' + fresh.trackingNumber + ') 새로 발급하지 않았습니다.' });
+      }
+      // N-P1-2: 락 안에서 다시 확인 — 사전 검사와 API 호출 사이에 주문이
+      // 바뀌어 기본 수량이 0이 됐을 수 있습니다.
+      if (fresh.qty <= 0) {
+        return respond({ ok: false, error: fresh.kind === 'main'
+          ? '기본 배송지에 보낼 상품이 없습니다. 모든 상품이 별도 배송지로 나뉘었습니다.'
+          : '이 배송지에 보낼 상품이 없습니다.' });
       }
       var res = callLogenApi_(cfg, bodyRes.body);
       if (!res.ok) {
@@ -2087,9 +2201,21 @@ function sendPromoBatch_(batch, sendFn, sleepFn, onSent) {
     var res = { phone: item.phone, message: item.message, ok: ok, error: errText };
     results.push(res);
     // 건마다 발송 직후 즉시 기록합니다 (다음 건을 보내기 전, 대기 전).
+    // N-P1-10: 기록(onSent)이 실패했는지 결과에 남깁니다 (recorded).
+    // onSent가 던져도 발송 자체는 된 것이니, 기록 실패는 호출자가
+    // 따로 복구해야 합니다 — 조용히 넘기면 '발송중'으로 남아 15분 뒤
+    // 다시 보내집니다.
+    var recorded = true;
+    var recordError = '';
     if (onSent) {
-      try { onSent(item, res); } catch (e) { Logger.log('sendPromoBatch_ onSent failed: ' + e); }
+      try { onSent(item, res); } catch (e) {
+        recorded = false;
+        recordError = String(e);
+        Logger.log('sendPromoBatch_ onSent failed: ' + e);
+      }
     }
+    res.recorded = recorded;
+    res.recordError = recordError;
     // 마지막 건 뒤에는 쉬지 않습니다.
     if (sleepFn && i < batch.length - 1) sleepFn(PROMO_QUEUE_SEND_DELAY_MS);
   }
@@ -2174,31 +2300,56 @@ function reservePromo(data) {
     var finalMessage = buildPromoMessage_(message);
     var sheet = getPromoQueueSheet_();
     var stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-    var rowsToAdd = [];
-    for (var i = 0; i < numbers.length; i++) {
-      rowsToAdd.push([stamp, e164ToDomestic_(numbers[i]), finalMessage, '대기', '', '', '']);
-    }
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
-    var pendingAfter = numbers.length;
+    var pendingAfter = 0;
+    var duplicates = 0;
+    var kept = numbers.length;
     try {
       var lastRow = sheet.getLastRow();
+      var rows = [];
       if (lastRow >= 2) {
-        var rows = sheet.getRange(2, 1, lastRow - 1, SMS_QUEUE_HEADERS.length).getDisplayValues();
+        rows = sheet.getRange(2, 1, lastRow - 1, SMS_QUEUE_HEADERS.length).getDisplayValues();
         pendingAfter += countQueueStatus_(rows, '대기');
       }
-      // 한 번에 묶어서 씁니다 (행마다 한 줄씩 쓰면 500건까지 100초 넘게 걸리고, 그 사이 고객 주문이 막힙니다).
-      sheet.getRange(lastRow + 1, 1, rowsToAdd.length, SMS_QUEUE_HEADERS.length).setValues(rowsToAdd);
+      // N-P1-1 (gstack 오디트 2026-11-15): 큐에 이미 '대기'·'발송중'인 번호는
+      // 다시 예약하지 않습니다 — 같은 번호를 두 번 예약하면 15분 뒤 같은
+      // 문자를 두 번 받습니다. 락 안에서 읽은 큐와 대조하므로, 동시에
+      // 들어온 두 예약이 서로를 못 보는 일도 없습니다. 저장값이 앞자리 0을
+      // 잃은 10자리여도 정규화(normalizeMobileDigits_)로 비교합니다.
+      var pendingNumbers = {};
+      for (var ri = 0; ri < rows.length; ri++) {
+        var st = String(rows[ri][3] || '').trim();
+        if (st === '대기' || st === '발송중') {
+          pendingNumbers[normalizeMobileDigits_(String(rows[ri][1] || ''))] = true;
+        }
+      }
+      var rowsToAdd = [];
+      for (var i = 0; i < numbers.length; i++) {
+        var domestic = e164ToDomestic_(numbers[i]);
+        if (pendingNumbers[normalizeMobileDigits_(domestic)]) { duplicates++; continue; }
+        rowsToAdd.push([stamp, domestic, finalMessage, '대기', '', '', '']);
+      }
+      kept = rowsToAdd.length;
+      pendingAfter += kept;
+      if (rowsToAdd.length) {
+        // 한 번에 묶어서 씁니다 (행마다 한 줄씩 쓰면 500건까지 100초 넘게 걸리고, 그 사이 고객 주문이 막힙니다).
+        sheet.getRange(lastRow + 1, 1, rowsToAdd.length, SMS_QUEUE_HEADERS.length).setValues(rowsToAdd);
+      }
     } finally {
       lock.releaseLock();
     }
+    if (!kept) {
+      return respond({ ok: false, error: '입력한 번호가 모두 이미 예약되어 있습니다. (대기·발송중)' });
+    }
     return respond({
       ok: true,
-      queued: numbers.length,
+      queued: kept,
       message: finalMessage,
       estimatedDays: estimatePromoDays_(pendingAfter, PROMO_DAILY_LIMIT),
       pending: pendingAfter,
-      filteredOptOut: filteredOptOut
+      filteredOptOut: filteredOptOut,
+      duplicates: duplicates
     });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
@@ -2314,12 +2465,44 @@ function processPromoQueue_() {
   if (!batch.length) return;
 
   // 4) 건마다 발송 직후 즉시 상태·발송일시·로그를 기록합니다.
+  // N-P1-10: 기록이 실패하면 최대 3번까지 다시 시도합니다 (짧게 쉬면서).
+  // 그래도 안 되면 종단 상태 '기록실패'로 남깁니다 — '발송중'으로 두면
+  // 15분 뒤 복구가 '대기'로 되돌려 이미 보낸 문자를 다시 보내게 됩니다.
+  // '기록실패'는 다시 보내지 않으므로 중복 발송이 없습니다. 발송 자체가
+  // 실패한 건(res.ok=false)은 '실패'로 남겨 다시 보내기 대상이 되게 합니다.
+  // 상태 쓰기(setValue)는 멱등이라 재시도가 안전하고, 발송 기록
+  // (appendRow)은 멱등이 아니라 상태 기록이 된 뒤 한 번만 시도합니다.
   sendPromoBatch_(batch, sendSmsViaSmsGate_, function (ms) { Utilities.sleep(ms); }, function (item, res) {
     var sentStamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-    queueSheet.getRange(item.row, 4).setValue(res.ok ? '발송완료' : '실패');
-    queueSheet.getRange(item.row, 6).setValue(sentStamp);
-    if (!res.ok) queueSheet.getRange(item.row, 7).setValue(res.error || '발송 실패');
-    logPromoSend_(logSheet, '홍보', item.message, 1, res.ok ? 1 : 0, res.ok ? 0 : 1, res.ok ? [] : [item.phone]);
+    var status = res.ok ? '발송완료' : '실패';
+    var statusOk = false;
+    var lastErr = '';
+    for (var attempt = 0; attempt < 3 && !statusOk; attempt++) {
+      try {
+        queueSheet.getRange(item.row, 4).setValue(status);
+        queueSheet.getRange(item.row, 6).setValue(sentStamp);
+        if (!res.ok) queueSheet.getRange(item.row, 7).setValue(res.error || '발송 실패');
+        statusOk = true;
+      } catch (e) {
+        lastErr = String(e);
+        if (attempt < 2) Utilities.sleep(2000);
+      }
+    }
+    if (statusOk) {
+      try {
+        logPromoSend_(logSheet, '홍보', item.message, 1, res.ok ? 1 : 0, res.ok ? 0 : 1, res.ok ? [] : [item.phone]);
+      } catch (e) {
+        Logger.log('processPromoQueue_ log failed for row ' + item.row + ': ' + e);
+      }
+      return;
+    }
+    // 상태조차 기록이 안 됐습니다. '발송중'으로 두지 말고 종단 상태로 남깁니다.
+    try {
+      queueSheet.getRange(item.row, 4).setValue(res.ok ? '기록실패' : '실패');
+      queueSheet.getRange(item.row, 7).setValue('기록 실패: ' + lastErr);
+    } catch (e2) {
+      Logger.log('processPromoQueue_ record failed for row ' + item.row + ': ' + lastErr + ' / ' + e2);
+    }
   });
 }
 
@@ -2366,9 +2549,9 @@ function setupPromoTrigger(data) {
 
 /**
  * 홍보 문자 예약 현황 (관리자 전용, 배포 2)
- * 반환: {ok, queue: {waiting, sending, done, failed},
+ * 반환: {ok, queue: {waiting, sending, done, failed, recordFailed},
  *         todaySent, limit, triggerInstalled, recent: [최신 10건],
- *         items: [큐 항목 — '대기'·'발송중'만, 오래된 순 최대 100건]}
+ *         items: [큐 항목 — '대기'·'발송중'·'실패'·'기록실패', 오래된 순 최대 100건]}
  * 최근 기록: [{date, kind, message, total, sent, failed, failedNumbers}]
  * 큐 항목: [{row, reservedAt, phone, message, status, startedAt, sentAt, error}]
  * (row는 큐 시트 행 번호(1부터)로, updatePromo·cancelPromo에 그대로 씁니다)
@@ -2378,7 +2561,7 @@ function getPromoStatus(data) {
     checkAdmin(data && data.key);
     var queueSheet = getPromoQueueSheet_();
     var logSheet = getSmsLogSheet_();
-    var queue = { waiting: 0, sending: 0, done: 0, failed: 0 };
+    var queue = { waiting: 0, sending: 0, done: 0, failed: 0, recordFailed: 0 };
     var items = [];
     var qLast = queueSheet.getLastRow();
     if (qLast >= 2) {
@@ -2387,11 +2570,15 @@ function getPromoStatus(data) {
       queue.sending = countQueueStatus_(qRows, '발송중');
       queue.done = countQueueStatus_(qRows, '발송완료');
       queue.failed = countQueueStatus_(qRows, '실패');
-      // 편집·모니터링용 큐 항목: '대기'와 '발송중'만 오래된 순으로 최대 100건.
-      // 발송완료·실패·취소는 최근 발송 기록(recent)에 남습니다.
+      // N-P1-10: '기록실패'는 발송은 됐는데 기록이 끝내 안 된 행입니다.
+      queue.recordFailed = countQueueStatus_(qRows, '기록실패');
+      // 편집·모니터링용 큐 항목: '대기'·'발송중'·'실패'·'기록실패'를
+      // 오래된 순으로 최대 100건. '실패'를 포함해야 SmsMonitor의
+      // 다시 보내기 버튼이 뜹니다 (N-P1-3). 발송완료·취소는 최근 발송
+      // 기록(recent)에 남습니다.
       for (var qi = 0; qi < qRows.length && items.length < 100; qi++) {
         var qs = String((qRows[qi] || [])[3] || '');
-        if (qs !== '대기' && qs !== '발송중') continue;
+        if (qs !== '대기' && qs !== '발송중' && qs !== '실패' && qs !== '기록실패') continue;
         items.push({
           row: qi + 2,
           reservedAt: String(qRows[qi][0] || ''),
@@ -2568,6 +2755,46 @@ function cancelPromo(data) {
         return respond({ ok: false, error: '이미 발송 중이거나 발송된 예약은 취소할 수 없습니다. (상태: ' + status + ')' });
       }
       sheet.getRange(row, 4).setValue('취소');
+      return respond({ ok: true, row: row });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 홍보 예약 1건 다시 보내기 (관리자 전용, 배포 2) — 상태 '실패'인 행만 '대기'로 되돌립니다.
+ * body: { action: 'retryPromo', key: 관리자 키, row: 큐 시트 행 번호(1부터) }
+ * '실패'는 발송 자체가 안 된 행이므로 다시 '대기'로 돌리면 15분 트리거가
+ * 다시 보냅니다. 발송은 됐는데 기록만 실패한 '기록실패'(N-P1-10)는
+ * 대상이 아닙니다 — 다시 보내면 고객이 같은 문자를 두 번 받습니다.
+ * 락 안에서 상태를 다시 확인한 뒤에만 씁니다. 되돌릴 때 이전 시도의
+ * 처리시작·오류 기록은 지워 깔끔한 '대기' 행으로 만듭니다.
+ * 반환: {ok, row}
+ */
+function retryPromo(data) {
+  try {
+    checkAdmin(data && data.key);
+    var row = Number((data && data.row) || 0);
+    if (!row || row < 2) {
+      return respond({ ok: false, error: '다시 보낼 예약 행을 알 수 없습니다.' });
+    }
+    var sheet = getPromoQueueSheet_();
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      if (row > sheet.getLastRow()) {
+        return respond({ ok: false, error: '없는 예약 행입니다.' });
+      }
+      var status = String(sheet.getRange(row, 4).getDisplayValue() || '');
+      if (status !== '실패') {
+        return respond({ ok: false, error: '발송에 실패한 예약만 다시 보낼 수 있습니다. (상태: ' + status + ')' });
+      }
+      sheet.getRange(row, 4).setValue('대기');
+      sheet.getRange(row, 5).setValue('');
+      sheet.getRange(row, 7).setValue('');
       return respond({ ok: true, row: row });
     } finally {
       lock.releaseLock();
