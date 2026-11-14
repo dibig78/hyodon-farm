@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>효돈농원 관리자 | 주문 관리</title>
+<meta name="description" content="효돈농원 주문 관리 전용 페이지. 손님에게는 공유하지 않습니다.">
+<style>
+  :root{
+    --ink:#241a12; --ink-soft:#463628; --muted:#6f6154; --line:#e9ddcd; --line-strong:#d9c6ae;
+    --page:#fdf8f1; --surface:#fffdfa; --surface-alt:#f8efe3;
+    --orange:#d9551f; --orange-dark:#b8430f; --orange-soft:#fdefe4;
+    --green:#3c6644; --green-soft:#edf3ea; --red:#a83a2a;
+    --radius:16px;
+    --serif:"Gowun Batang","Nanum Myeongjo","Noto Serif KR",serif;
+    --sans:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; font-family:var(--sans); color:var(--ink); background:var(--page); line-height:1.6}
+  a{color:inherit}
+  .wrap{max-width:1060px; margin:0 auto; padding:0 16px}
+  header{background:#2a2018; color:#fdf6ec; padding:22px 0 18px}
+  header h1{font-family:var(--serif); font-size:22px; margin:0}
+  header p{margin:4px 0 0; font-size:13.5px; color:#cfbca9}
+  .warn{margin:16px 0 0; background:#fff3e2; border:1px solid #e8cfa8; border-radius:12px; padding:12px 14px; font-size:13.5px}
+  .warn b{color:var(--red)}
+  main{padding:20px 0 60px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px}
+  .card h2{font-family:var(--serif); font-size:18px; margin:0 0 6px}
+  .card p{margin:0; font-size:14px; color:var(--muted)}
+  label{display:block; font-size:13.5px; font-weight:700; margin-bottom:6px}
+  input[type="text"], input[type="search"]{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:15px; background:#fff}
+  input:focus{outline:0; border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14)}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
+  .row .grow{flex:1; min-width:220px}
+  .btn{display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 20px; border-radius:999px; border:1px solid transparent; font:inherit; font-weight:700; font-size:15px; cursor:pointer; text-decoration:none; background:var(--orange); color:#fff}
+  .btn:hover{background:var(--orange-dark)}
+  .btn--ghost{background:#fff; color:var(--ink); border-color:var(--line-strong)}
+  .btn--ghost:hover{border-color:var(--orange); color:var(--orange-dark)}
+  .btn--small{min-height:38px; padding:0 14px; font-size:14px}
+  .btn[disabled]{opacity:.5; cursor:default}
+  .stats{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:16px}
+  @media (min-width:640px){ .stats{grid-template-columns:repeat(4,1fr)} }
+  .stat{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px}
+  .stat b{display:block; font-size:26px; line-height:1.2}
+  .stat span{font-size:13px; color:var(--muted)}
+  .stat--alert b{color:var(--red)}
+  .filters{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px}
+  .filters button{min-height:40px; padding:0 16px; border-radius:999px; border:1px solid var(--line-strong); background:#fff; font:inherit; font-weight:700; font-size:14px; cursor:pointer}
+  .filters button.on{background:var(--ink); color:#fff; border-color:var(--ink)}
+  .search{margin-bottom:14px}
+  .order{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:12px}
+  .order.is-paid{border-color:#c8d8c8}
+  .order__head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:baseline}
+  .order__head h3{margin:0; font-size:16.5px}
+  .order__head time{font-size:13px; color:var(--muted)}
+  .order__amount{font-size:18px; font-weight:800}
+  .order dl{display:grid; grid-template-columns:86px 1fr; gap:2px 10px; margin:12px 0; font-size:14px}
+  .order dt{color:var(--muted)}
+  .order dd{margin:0}
+  .badge{display:inline-block; padding:2px 10px; border-radius:999px; font-size:12.5px; font-weight:700}
+  .badge--unpaid{background:#fbe9e4; color:var(--red)}
+  .badge--paid{background:var(--green-soft); color:var(--green)}
+  .badge--notracking{background:#fdf0e0; color:#7a5a1c}
+  .order__actions{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; border-top:1px solid var(--line); padding-top:14px}
+  .order__actions .field{flex:1; min-width:180px}
+  .check{display:flex; align-items:center; gap:8px; font-weight:700; font-size:14.5px; min-height:44px}
+  .check input{width:20px; height:20px; accent-color:var(--green)}
+  .empty{text-align:center; color:var(--muted); padding:36px 0}
+  .status{font-size:14px; color:var(--muted); min-height:22px}
+  .status--error{color:var(--red)}
+  footer{border-top:1px solid var(--line); padding:20px 0 40px; font-size:13px; color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>효돈농원 관리자</h1>
+    <p>주문 확인 · 입금 확인 · 송장번호 입력 — 이 페이지는 손님에게 공유하지 않습니다.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="warn"><b>주의:</b> 이 페이지는 홈페이지에 링크가 없습니다. 주소(<code>hyodon-farm/admin.html</code>)를 손님에게 공유하지 마세요. 주문 목록은 본인 구글 계정으로 로그인한 뒤에만 열립니다. 로그인이 안 되면 Apps Script 배포 설정(액세스 권한)을 먼저 확인하세요.</p>
+
+  <section class="card" id="setupCard">
+    <h2>연결 설정</h2>
+    <p>Apps Script 웹앱 주소(<code>/exec</code>로 끝나는 주소)를 한 번만 입력하면 이 기기에 저장됩니다. 아직 배포 전이면 비워 두고 아래 안내대로 먼저 배포하세요.</p>
+    <div class="row" style="margin-top:12px">
+      <div class="grow">
+        <label for="scriptUrl">Apps Script 웹앱 URL</label>
+        <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+      </div>
+      <button class="btn" type="button" id="saveUrlBtn">저장하고 주문 불러오기</button>
+    </div>
+    <p class="status" id="setupStatus"></p>
+  </section>
+
+  <section id="board" hidden>
+    <div class="stats" aria-label="주문 현황">
+      <div class="stat"><b id="statTotal">0</b><span>전체 주문</span></div>
+      <div class="stat stat--alert"><b id="statUnpaid">0</b><span>미입금</span></div>
+      <div class="stat stat--alert"><b id="statNoTracking">0</b><span>미출고 (송장번호 없음)</span></div>
+      <div class="stat"><b id="statToday">0</b><span>오늘 주문</span></div>
+    </div>
+
+    <div class="row" style="margin-bottom:12px">
+      <div class="grow search" style="margin:0">
+        <label for="searchInput">검색 (주문자·받는분·입금자명·전화번호)</label>
+        <input type="search" id="searchInput" placeholder="예: 홍길동 또는 010-">
+      </div>
+      <button class="btn btn--ghost" type="button" id="reloadBtn">새로고침</button>
+    </div>
+
+    <div class="filters" role="group" aria-label="주문 필터">
+      <button type="button" data-filter="all" class="on">전체</button>
+      <button type="button" data-filter="unpaid">미입금만</button>
+      <button type="button" data-filter="notracking">미출고만</button>
+      <button type="button" data-filter="paid">입금 완료</button>
+    </div>
+
+    <p class="status" id="listStatus"></p>
+    <div id="orderList"></div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>효돈농원 · 제주특별자치도 서귀포시 칠십리로 636 (하효동 1233) · 주문 접수 시트와 같은 데이터를 봅니다. 이 페이지에서 바꾸면 시트에도 바로 반영됩니다.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var LS_KEY = "hyodon-admin-script-url";
+  var $ = function (s) { return document.querySelector(s); };
+  var orders = [];
+  var filter = "all";
+  var query = "";
+
+  var scriptUrlInput = $("#scriptUrl");
+  var setupStatus = $("#setupStatus");
+  var listStatus = $("#listStatus");
+
+  function getUrl() {
+    var v = (scriptUrlInput.value || "").trim() || localStorage.getItem(LS_KEY) || "";
+    return v.replace(/\/$/, "");
+  }
+  function won(n) { return Number(n || 0).toLocaleString("ko-KR") + "원"; }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function todayStr() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+
+  function setStatus(el, msg, isError) {
+    el.textContent = msg || "";
+    el.classList.toggle("status--error", !!isError);
+  }
+
+  function loadOrders() {
+    var url = getUrl();
+    if (!url) { setStatus(setupStatus, "Apps Script 웹앱 URL을 먼저 입력하세요. 배포 방법은 저장소의 apps-script/README.md를 보세요.", true); return; }
+    setStatus(listStatus, "주문을 불러오는 중입니다…");
+    fetch(url + "?action=list", { credentials: "include" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || !data.ok) throw new Error((data && data.error) || "목록을 불러오지 못했습니다. 본인 계정으로 로그인했는지 확인하세요.");
+        orders = data.orders || [];
+        $("#board").hidden = false;
+        render();
+        setStatus(listStatus, "최근 주문 " + orders.length + "건을 불러왔습니다. " + new Date().toLocaleString("ko-KR"));
+      })
+      .catch(function (err) {
+        $("#board").hidden = true;
+        setStatus(listStatus, "불러오기 실패: " + err.message, true);
+        setStatus(setupStatus, "실패했습니다. 웹앱 배포 설정이 '액세스: Google 계정이 있는 모든 사용자'인지, Code.gs에 관리자 기능이 들어있는지 확인하세요.", true);
+      });
+  }
+
+  function renderStats() {
+    var today = todayStr();
+    var unpaid = orders.filter(function (o) { return !o.paid; }).length;
+    var noTracking = orders.filter(function (o) { return !(o.tracking || "").trim(); }).length;
+    var todayCount = orders.filter(function (o) { return String(o.datetime || "").indexOf(today) === 0; }).length;
+    $("#statTotal").textContent = orders.length;
+    $("#statUnpaid").textContent = unpaid;
+    $("#statNoTracking").textContent = noTracking;
+    $("#statToday").textContent = todayCount;
+  }
+
+  function render() {
+    renderStats();
+    var q = query.trim();
+    var list = orders.filter(function (o) {
+      if (filter === "unpaid" && o.paid) return false;
+      if (filter === "paid" && !o.paid) return false;
+      if (filter === "notracking" && (o.tracking || "").trim()) return false;
+      if (q) {
+        var hay = [o.orderer, o.ordererPhone, o.receiver, o.receiverPhone, o.depositor, o.product].join(" ");
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+    var box = $("#orderList");
+    if (!list.length) {
+      box.innerHTML = '<p class="empty">해당 주문이 없습니다.</p>';
+      return;
+    }
+    box.innerHTML = list.map(function (o) {
+      var paidBadge = o.paid
+        ? '<span class="badge badge--paid">입금 확인됨</span>'
+        : '<span class="badge badge--unpaid">미입금</span>';
+      var trackBadge = (o.tracking || "").trim()
+        ? '<span class="badge badge--paid">출고됨</span>'
+        : '<span class="badge badge--notracking">미출고</span>';
+      return '' +
+        '<article class="order' + (o.paid ? ' is-paid' : '') + '" data-row="' + o.row + '">' +
+          '<div class="order__head"><h3>' + esc(o.receiver || "") + ' — ' + esc(o.product || "") + '</h3><time>' + esc(o.datetime || "") + '</time></div>' +
+          '<div style="margin-top:8px">' + paidBadge + ' ' + trackBadge + ' <span class="order__amount">' + won(o.amount) + '</span></div>' +
+          '<dl>' +
+            '<dt>수량</dt><dd>' + esc(o.qty) + '박스</dd>' +
+            '<dt>입금자명</dt><dd>' + esc(o.depositor || "") + '</dd>' +
+            '<dt>주문자</dt><dd>' + esc(o.orderer || "") + ' · ' + esc(o.ordererPhone || "") + '</dd>' +
+            '<dt>받는분</dt><dd>' + esc(o.receiver || "") + ' · ' + esc(o.receiverPhone || "") + '</dd>' +
+            '<dt>주소</dt><dd>' + esc(o.receiverAddress || "") + '</dd>' +
+            '<dt>요청사항</dt><dd>' + esc(o.memo || "없음") + '</dd>' +
+          '</dl>' +
+          '<div class="order__actions">' +
+            '<label class="check"><input type="checkbox" class="js-paid" ' + (o.paid ? 'checked' : '') + '> 입금 확인</label>' +
+            '<div class="field"><label>송장번호 (로젠택배)</label><input type="text" class="js-tracking" value="' + esc(o.tracking || "") + '" placeholder="송장번호 입력"></div>' +
+            '<button type="button" class="btn btn--small js-save">저장</button>' +
+          '</div>' +
+        '</article>';
+    }).join("");
+  }
+
+  function saveOrder(card) {
+    var url = getUrl();
+    var row = Number(card.getAttribute("data-row"));
+    var paid = card.querySelector(".js-paid").checked;
+    var tracking = (card.querySelector(".js-tracking").value || "").trim();
+    var btn = card.querySelector(".js-save");
+    btn.disabled = true;
+    btn.textContent = "저장 중…";
+    fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "update", row: row, paid: paid, tracking: tracking })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || !data.ok) throw new Error((data && data.error) || "저장에 실패했습니다.");
+        var o = orders.filter(function (x) { return x.row === row; })[0];
+        if (o) { o.paid = paid; o.tracking = tracking; }
+        render();
+        setStatus(listStatus, row + "행이 저장됐습니다. 시트에도 바로 반영됩니다.");
+      })
+      .catch(function (err) { setStatus(listStatus, "저장 실패: " + err.message, true); })
+      .finally(function () { btn.disabled = false; btn.textContent = "저장"; });
+  }
+
+  $("#saveUrlBtn").addEventListener("click", function () {
+    var url = (scriptUrlInput.value || "").trim();
+    if (!url) { setStatus(setupStatus, "URL을 입력하세요.", true); return; }
+    localStorage.setItem(LS_KEY, url);
+    setStatus(setupStatus, "저장했습니다. 주문을 불러옵니다.");
+    loadOrders();
+  });
+  $("#reloadBtn").addEventListener("click", loadOrders);
+  $("#searchInput").addEventListener("input", function (e) { query = e.target.value || ""; render(); });
+  document.querySelectorAll(".filters button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.querySelectorAll(".filters button").forEach(function (x) { x.classList.remove("on"); });
+      b.classList.add("on");
+      filter = b.getAttribute("data-filter");
+      render();
+    });
+  });
+  $("#orderList").addEventListener("click", function (e) {
+    if (e.target && e.target.classList.contains("js-save")) {
+      var card = e.target.closest(".order");
+      if (card) saveOrder(card);
+    }
+  });
+
+  var saved = localStorage.getItem(LS_KEY) || "";
+  if (saved) {
+    scriptUrlInput.value = saved;
+    loadOrders();
+  }
+})();
+</script>
+</body>
+</html>
