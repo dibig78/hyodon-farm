@@ -184,7 +184,7 @@ function trackGet(phone) {
       var recvPhone = String(r[8] || '').replace(/[^0-9]/g, '');
       if (ordPhone !== digits && recvPhone !== digits) continue;
       out.push({
-        datetime: r[0], product: r[1], qty: Number(r[2] || 0), amount: Number(r[3] || 0),
+        datetime: r[0], product: r[1], qty: Number(r[2] || 0), amount: Number(String(r[3] || '0').replace(/[^0-9]/g, '') || 0),
         receiver: r[7], paid: r[11] === '확인', tracking: r[12] || ''
       });
       if (out.length >= 20) break;
