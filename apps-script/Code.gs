@@ -7,7 +7,9 @@
  *   3) 주문일시는 한국 시간(KST)으로 기록합니다.
  *   4) 관리자 페이지(admin.html)용 목록 조회(?action=list)와
  *      입금확인·송장번호 업데이트(action=update)도 처리합니다.
- *      관리자 기능은 OWNER_EMAIL과 같은 Google 계정으로 로그인했을 때만 동작합니다.
+ *      관리자 기능은 관리자 키(ADMIN_KEY) 또는 OWNER_EMAIL과 같은 Google 계정으로
+ *      로그인했을 때 동작합니다. 관리자 페이지는 fetch로 불러오기 때문에
+ *      Google 계정 로그인 방식이 브라우저에서 막힐 수 있어, 키 방식을 씁니다.
  *
  * 설치 방법은 같은 저장소의 apps-script/README.md 를 보세요.
  * ------------------------------------------------------------
@@ -33,10 +35,18 @@ var NOTIFY_EMAIL = '';
  * 반드시 여기에 본인 Gmail을 넣으세요. 예: 'dibig788@gmail.com'
  * 비워 두면 관리자 기능은 동작하지 않습니다.
  * 보안상 GitHub 저장소에는 빈칸으로 두고, Apps Script 편집기에서만 입력하세요.
- * 웹앱 배포 설정은 '실행: 나', '액세스: Google 계정이 있는 모든 사용자'로 해야
- * 접속한 사람의 Gmail을 확인할 수 있습니다.
+ * Google 로그인 방식을 쓰려면 웹앱 배포 설정이 '실행: 나',
+ * '액세스: Google 계정이 있는 모든 사용자'여야 접속한 Gmail을 확인할 수 있습니다.
  */
 var OWNER_EMAIL = '';
+
+/**
+ * 관리자 키 — 관리자 페이지(admin.html)에서 목록을 볼 때 쓰는 비밀번호입니다.
+ * GitHub 저장소에는 빈칸으로 두고, Apps Script 편집기에서만 입력하세요.
+ * 배포 2(관리자용)를 '액세스: 모든 사용자'로 풀어도 이 키를 아는 사람만
+ * 관리자 기능을 쓸 수 있습니다. 키는 절대 GitHub에 올리지 마세요.
+ */
+var ADMIN_KEY = '';
 
 /** 시트 1행 헤더 (index.html 설정과 순서가 같아야 합니다) */
 var HEADERS = [
@@ -119,7 +129,7 @@ function doPost(e) {
  * ============================================================ */
 function doGet(e) {
   // 관리자 주문 목록 조회 (admin.html에서 ?action=list 로 호출)
-  if (e && e.parameter && e.parameter.action === 'list') return adminList();
+  if (e && e.parameter && e.parameter.action === 'list') return adminList(e.parameter.key);
   var status = 'ok';
   var message = '효돈농원 주문 접수 서비스가 동작 중입니다.';
   try {
@@ -140,21 +150,22 @@ function doGet(e) {
 
 /* ============================================================
  *  관리자 전용 (admin.html)
- *  - OWNER_EMAIL과 접속한 Google 계정이 같을 때만 동작합니다.
+ *  - 관리자 키(ADMIN_KEY)가 맞거나, OWNER_EMAIL과 접속한 Google 계정이 같을 때 동작합니다.
+ *  - 관리자 페이지는 fetch로 부르기 때문에 Google 로그인 방식이 브라우저에서 막힐 수
+ *    있어 키 방식을 씁니다. 키 방식을 쓸 때는 배포 액세스를 '모든 사용자'로 둡니다.
  * ============================================================ */
-function requireOwner() {
-  if (!OWNER_EMAIL) throw new Error('OWNER_EMAIL을 Code.gs에 입력하세요.');
+function checkAdmin(key) {
+  if (key && ADMIN_KEY && String(key) === String(ADMIN_KEY)) return;
+  if (!OWNER_EMAIL) throw new Error('관리자 키를 Code.gs에 입력하세요. (ADMIN_KEY 또는 OWNER_EMAIL)');
   var me = '';
   try { me = Session.getActiveUser().getEmail(); } catch (err) { me = ''; }
-  if (!me) throw new Error('Google 계정으로 로그인한 뒤 다시 여세요. 웹앱 배포 설정이 "Google 계정이 있는 모든 사용자"인지 확인하세요.');
-  if (me.toLowerCase() !== String(OWNER_EMAIL).toLowerCase()) {
-    throw new Error('관리자 계정이 아닙니다: ' + me);
-  }
+  if (me && me.toLowerCase() === String(OWNER_EMAIL).toLowerCase()) return;
+  throw new Error('관리자 확인이 필요합니다. 관리자 키를 입력하거나 본인 Google 계정으로 로그인하세요.');
 }
 
-function adminList() {
+function adminList(key) {
   try {
-    requireOwner();
+    checkAdmin(key);
     var sheet = getSheet();
     ensureHeader(sheet);
     var lastRow = sheet.getLastRow();
@@ -184,7 +195,7 @@ function adminList() {
 
 function adminUpdate(data) {
   try {
-    requireOwner();
+    checkAdmin(data && data.key);
     var row = Number(data.row || 0);
     if (!row || row < 2) return respond({ ok: false, error: '잘못된 행 번호입니다.' });
     var sheet = getSheet();
