@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>효돈농원 | 제주 서귀포 하효동 산지직송 노지감귤·황금향</title>
 <meta name="description" content="제주 서귀포 하효동 효돈농원에서 당일 수확·선별한 노지감귤(10kg)과 황금향(5kg)을 산지에서 바로 보냅니다. 로젠택배 무료배송, 전 상품 택배비 포함.">
-<meta name="theme-color" content="#fdf7ee">
+<meta name="theme-color" content="#fdf8f1">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="효돈농원">
 <meta property="og:title" content="효돈농원 | 제주 하효동 산지직송 노지감귤·황금향">
@@ -15,355 +15,454 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8D%8A%3C/text%3E%3C/svg%3E">
 <link rel="preload" as="image" href="assets/hero.jpg">
 <style>
+  /* =========================================================
+     효돈농원 — 디자인 시스템
+     4px 기반 스페이싱 스케일 · 12~56px 타입 램프 (Polaris/커머스 관례 참고)
+     ========================================================= */
   :root{
-    --ink:#2b2118;
-    --ink-soft:#4a3c31;
-    --muted:#7a6c5f;
-    --line:#ecdfcf;
-    --cream:#fdf8f1;
-    --card:#fffdfa;
-    --orange:#e2602a;
-    --orange-dark:#c24a19;
-    --orange-soft:#fdf0e6;
-    --green:#4b6b4f;
-    --gold:#d99a2b;
-    --shadow:0 6px 24px rgba(80,53,30,.08);
-    --radius:18px;
+    /* color */
+    --ink:#241a12;
+    --ink-soft:#463628;
+    --muted:#6f6154;
+    --line:#e9ddcd;
+    --line-strong:#d9c6ae;
+    --page:#fdf8f1;
+    --surface:#fffdfa;
+    --surface-alt:#f8efe3;
+    --orange:#d9551f;
+    --orange-dark:#b8430f;
+    --orange-soft:#fdefe4;
+    --green:#3c6644;
+    --green-soft:#edf3ea;
+    --gold:#a87718;
+    /* shape */
+    --radius-sm:10px;
+    --radius:16px;
+    --radius-lg:24px;
+    --shadow-1:0 1px 2px rgba(70,50,30,.05), 0 6px 18px rgba(70,50,30,.055);
+    --shadow-2:0 12px 34px rgba(70,50,30,.16);
+    /* layout */
+    --container:1160px;
+    --gutter:18px;
+    --header-h:64px;
+    /* 4px spacing scale */
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
+    --s6:32px; --s7:48px; --s8:64px; --s9:96px;
   }
+  @media (min-width:768px){ :root{ --gutter:28px; --header-h:68px; } }
+
   *{box-sizing:border-box}
   html{scroll-behavior:smooth; -webkit-text-size-adjust:100%}
   body{
     margin:0;
     font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,-apple-system,sans-serif;
     color:var(--ink);
-    background:var(--cream);
-    line-height:1.65;
+    background:var(--page);
     font-size:16px;
+    line-height:1.7;
+    letter-spacing:-.01em;
     -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
   }
   img{max-width:100%; display:block}
   a{color:inherit; text-decoration:none}
-  button{font-family:inherit}
-  h1,h2,h3,p{margin:0}
-  ul{margin:0; padding:0; list-style:none}
-  .wrap{width:100%; max-width:760px; margin:0 auto; padding:0 18px}
-  [id]{scroll-margin-top:74px}
-  .section{padding:56px 0}
-  .section--tight{padding:36px 0}
+  button{font-family:inherit; letter-spacing:inherit}
+  h1,h2,h3,h4,p{margin:0}
+  ul,ol{margin:0; padding:0; list-style:none}
+  b,strong{font-weight:700}
+  :focus-visible{outline:3px solid var(--orange); outline-offset:2px; border-radius:6px}
+  .wrap{width:100%; max-width:var(--container); margin:0 auto; padding-inline:var(--gutter)}
+  [id]{scroll-margin-top:calc(var(--header-h) + 16px)}
+  .br-md{display:none}
+  @media (min-width:768px){ .br-md{display:inline} }
+
+  /* ---------- type ---------- */
   .eyebrow{
-    font-size:13px; letter-spacing:.14em; font-weight:700;
+    display:inline-block; font-size:12px; font-weight:800; letter-spacing:.14em;
     color:var(--orange); text-transform:uppercase; margin-bottom:10px;
   }
-  h2{font-size:24px; line-height:1.35; letter-spacing:-.02em}
-  .lead{color:var(--muted); margin-top:10px; font-size:15px}
+  h2{font-size:clamp(23px,3.4vw,34px); line-height:1.3; letter-spacing:-.03em; font-weight:800}
+  .lead{color:var(--muted); margin-top:12px; font-size:15.5px; line-height:1.7; max-width:46em}
+  .section-head{max-width:640px}
 
-  /* ---------- top bar ---------- */
-  .topbar{
-    position:sticky; top:0; z-index:40;
-    background:rgba(253,248,241,.94);
-    backdrop-filter:blur(10px);
-    border-bottom:1px solid rgba(236,223,207,.8);
-  }
-  .topbar__inner{
-    display:flex; align-items:center; justify-content:space-between;
-    gap:12px; height:60px; max-width:760px; margin:0 auto; padding:0 18px;
-  }
-  .brand{display:flex; align-items:center; gap:9px}
-  .brand__mark{font-size:22px; line-height:1}
-  .brand strong{display:block; font-size:16px; letter-spacing:-.01em; line-height:1.2}
-  .brand em{display:block; font-style:normal; font-size:11px; color:var(--muted); letter-spacing:.04em}
-  .topbar__nav{display:flex; align-items:center; gap:6px; font-size:14px; font-weight:600}
-  .topbar__nav a{padding:8px 10px; border-radius:999px; color:var(--ink-soft)}
-  .topbar__nav a:hover{background:#f6ebdd}
-  .topbar__call{background:var(--orange); color:#fff !important; padding:8px 14px !important}
-  @media (max-width:400px){ .topbar__nav a:not(.topbar__call){display:none} }
-
-  /* ---------- hero ---------- */
-  .hero{position:relative; isolation:isolate; overflow:hidden; background:#3a2a1c}
-  .hero__img{width:100%; height:clamp(360px,58vh,560px); object-fit:cover; opacity:.95}
-  .hero__shade{
-    position:absolute; inset:0;
-    background:linear-gradient(180deg,rgba(28,18,10,.28) 0%,rgba(28,18,10,.12) 35%,rgba(28,18,10,.78) 100%);
-  }
-  .hero__content{
-    position:absolute; left:0; right:0; bottom:64px;
-    max-width:760px; margin:0 auto; padding:0 18px; color:#fff;
-  }
-  .hero__eyebrow{
-    display:inline-block; font-size:12px; font-weight:700; letter-spacing:.1em;
-    background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.36);
-    padding:5px 11px; border-radius:999px; margin-bottom:14px;
-  }
-  .hero h1{
-    font-size:clamp(28px,7.2vw,40px); line-height:1.28; letter-spacing:-.03em;
-    text-shadow:0 2px 18px rgba(0,0,0,.28);
-  }
-  .hero__desc{
-    margin-top:12px; font-size:14.5px; color:rgba(255,255,255,.92);
-    max-width:34em; text-shadow:0 1px 10px rgba(0,0,0,.3);
-  }
-  .hero__actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:20px}
-  .badges{
-    position:absolute; left:0; right:0; bottom:0;
-    display:flex; justify-content:center; gap:8px; flex-wrap:wrap;
-    padding:12px 14px; background:rgba(43,33,24,.72);
-  }
-  .badges li{
-    font-size:12.5px; font-weight:600; color:#fbeee0;
-    padding:4px 10px; border-radius:999px; border:1px solid rgba(251,238,224,.28);
-  }
+  /* ---------- sections ---------- */
+  .section{padding-block:clamp(44px,6vw,84px)}
+  .section--alt{background:var(--surface-alt)}
+  .section--tight{padding-block:clamp(32px,4.4vw,56px)}
 
   /* ---------- buttons ---------- */
   .btn{
-    display:inline-flex; align-items:center; justify-content:center; gap:7px;
-    min-height:50px; padding:0 20px; border-radius:999px; border:1px solid transparent;
-    font-size:15.5px; font-weight:700; letter-spacing:-.01em;
-    cursor:pointer; transition:transform .12s ease, background .15s ease, box-shadow .15s ease;
-    text-align:center;
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    min-height:50px; padding:0 22px; border-radius:999px; border:1px solid transparent;
+    font-size:15.5px; font-weight:700; letter-spacing:-.01em; cursor:pointer;
+    transition:background .16s ease, transform .12s ease, box-shadow .16s ease, border-color .16s ease;
+    text-align:center; white-space:nowrap;
   }
   .btn:active{transform:translateY(1px)}
-  .btn--primary{background:var(--orange); color:#fff; box-shadow:0 8px 20px rgba(226,96,42,.28)}
-  .btn--primary:hover{background:var(--orange-dark)}
-  .btn--ghost{background:rgba(255,255,255,.14); color:#fff; border-color:rgba(255,255,255,.6); backdrop-filter:blur(4px)}
-  .btn--ghost-dark{background:#fff; color:var(--ink); border-color:var(--line)}
+  .btn--lg{min-height:56px; padding:0 28px; font-size:16.5px}
+  .btn--primary{background:var(--orange); color:#fff; box-shadow:0 8px 22px rgba(217,85,31,.26)}
+  .btn--primary:hover{background:var(--orange-dark); box-shadow:0 10px 26px rgba(217,85,31,.3)}
+  .btn--ghost{background:rgba(255,255,255,.14); color:#fff; border-color:rgba(255,255,255,.62); backdrop-filter:blur(4px)}
+  .btn--ghost:hover{background:rgba(255,255,255,.24)}
+  .btn--ghost-dark{background:#fff; color:var(--ink); border-color:var(--line-strong)}
+  .btn--ghost-dark:hover{background:var(--surface-alt); border-color:var(--muted)}
   .btn--block{width:100%}
-  .btn[disabled]{opacity:.6; cursor:not-allowed; box-shadow:none}
+  .btn[disabled],.btn[aria-disabled="true"]{cursor:not-allowed; box-shadow:none}
+  @media (max-width:420px){ .btn--lg{width:100%} }
+
+  /* ---------- header ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:40;
+    background:rgba(253,248,241,.93);
+    backdrop-filter:blur(12px) saturate(1.1);
+    border-bottom:1px solid rgba(233,221,205,.9);
+  }
+  .topbar__inner{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    height:var(--header-h); max-width:var(--container); margin:0 auto; padding-inline:var(--gutter);
+  }
+  .brand{display:flex; align-items:center; gap:9px; min-height:44px}
+  .brand__mark{font-size:22px; line-height:1}
+  .brand__text strong{display:block; font-size:16.5px; letter-spacing:-.02em; line-height:1.2; font-weight:800}
+  .brand__text em{display:block; font-style:normal; font-size:11.5px; color:var(--muted); letter-spacing:.02em; margin-top:1px}
+  .topbar__nav{display:flex; align-items:center; gap:2px; font-size:14.5px; font-weight:600}
+  .topbar__nav a{display:inline-flex; align-items:center; min-height:44px; padding:0 12px; border-radius:999px; color:var(--ink-soft)}
+  .topbar__nav a:hover{background:#f4e7d7; color:var(--ink)}
+  .topbar__nav .topbar__call{background:var(--orange); color:#fff; padding:0 16px; font-weight:700; margin-left:6px}
+  .topbar__nav .topbar__call:hover{background:var(--orange-dark); color:#fff}
+  @media (max-width:920px){ .topbar__nav a[href="#faq"]{display:none} }
+  @media (max-width:640px){ .topbar__nav a:not(.topbar__call){display:none} }
+
+  /* ---------- hero ---------- */
+  .hero{position:relative; isolation:isolate; overflow:hidden; background:#2a1d12; color:#fff}
+  .hero__media{position:absolute; inset:0}
+  .hero__img{width:100%; height:100%; object-fit:cover; object-position:62% 52%}
+  @media (min-width:768px){ .hero__img{object-position:58% 50%} }
+  .hero__shade{
+    position:absolute; inset:0;
+    background:
+      linear-gradient(180deg,rgba(20,12,6,.5) 0%,rgba(20,12,6,.18) 42%,rgba(20,12,6,.78) 100%),
+      linear-gradient(90deg,rgba(20,12,6,.62) 0%,rgba(20,12,6,.12) 62%,rgba(20,12,6,0) 100%);
+  }
+  .hero__inner{
+    position:relative; display:flex; flex-direction:column; justify-content:flex-end;
+    min-height:clamp(470px,74vh,600px); padding-block:48px 40px;
+  }
+  @media (min-width:768px){
+    .hero__inner{justify-content:center; min-height:clamp(540px,68vh,700px); padding-block:72px}
+  }
+  .hero__eyebrow{
+    align-self:flex-start; font-size:12px; font-weight:700; letter-spacing:.08em;
+    background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.38);
+    padding:6px 12px; border-radius:999px; margin-bottom:16px; backdrop-filter:blur(3px);
+  }
+  .hero h1{
+    font-size:clamp(30px,5.4vw,56px); line-height:1.18; letter-spacing:-.04em; font-weight:800;
+    text-shadow:0 2px 24px rgba(0,0,0,.28); max-width:16em;
+  }
+  .hero__desc{
+    margin-top:16px; font-size:clamp(14.5px,1.35vw,17px); line-height:1.65;
+    color:rgba(255,255,255,.92); max-width:30em; text-shadow:0 1px 12px rgba(0,0,0,.28);
+  }
+  .hero__meta{
+    display:inline-flex; align-items:center; gap:8px; align-self:flex-start;
+    margin-top:18px; padding:8px 14px; border-radius:999px;
+    background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.3);
+    font-size:13.5px; color:rgba(255,255,255,.95); backdrop-filter:blur(4px);
+  }
+  .hero__meta b{font-weight:800; color:#fff}
+  .hero__actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:24px}
+
+  /* ---------- trust strip ---------- */
+  .trust{background:var(--surface-alt); border-bottom:1px solid var(--line)}
+  .trust__list{display:grid; grid-template-columns:repeat(3,1fr)}
+  .trust__list li{
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:14px 6px; font-size:12.5px; font-weight:600; color:var(--ink-soft);
+    text-align:center; line-height:1.35;
+  }
+  .trust__list li + li{border-left:1px solid var(--line)}
+  .trust__list span[aria-hidden]{font-size:15px; line-height:1}
+  @media (min-width:768px){ .trust__list li{font-size:14px; padding:18px 12px; gap:9px} }
 
   /* ---------- notice ---------- */
   .notice{
     display:flex; gap:10px; align-items:flex-start;
-    margin:18px 0 0; padding:13px 15px; border-radius:14px;
-    background:#fff8e8; border:1px solid #f0dfb8; color:#7a5c14; font-size:13.5px;
+    margin-top:var(--s5); padding:13px 16px; border-radius:var(--radius-sm);
+    background:#fff8ea; border:1px solid #efe0bf; color:#6b4f12; font-size:13.5px; line-height:1.6;
   }
-  .notice strong{color:#5f4708}
+  .notice span[aria-hidden]{flex:0 0 auto; font-size:15px; line-height:1.4}
+  .notice strong{color:#54400b}
+  .notice a{text-decoration:underline; text-underline-offset:2px; font-weight:700}
   .notice[hidden]{display:none}
 
-  /* ---------- features ---------- */
-  .features{display:grid; gap:12px; grid-template-columns:1fr}
-  @media (min-width:620px){ .features{grid-template-columns:repeat(3,1fr)} }
+  /* ---------- why / features ---------- */
+  .features{display:grid; gap:var(--s3); margin-top:var(--s6)}
   .feature{
-    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-    padding:20px 18px; box-shadow:var(--shadow);
+    display:grid; grid-template-columns:44px minmax(0,1fr); gap:var(--s3) var(--s4);
+    align-items:start; background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); padding:var(--s4) var(--s4);
   }
-  .feature__icon{font-size:22px; line-height:1}
-  .feature h3{font-size:16px; margin:10px 0 6px; letter-spacing:-.01em}
-  .feature p{font-size:14px; color:var(--muted)}
+  .feature__icon{
+    width:44px; height:44px; border-radius:13px; background:var(--orange-soft);
+    display:grid; place-items:center; font-size:20px; line-height:1;
+    grid-row:span 2;
+  }
+  .feature h3{font-size:16.5px; letter-spacing:-.02em; align-self:center}
+  .feature p{font-size:14px; color:var(--muted); line-height:1.65; grid-column:2}
+  @media (min-width:768px){
+    .features{grid-template-columns:repeat(3,1fr); gap:var(--s4)}
+    .feature{grid-template-columns:1fr; padding:var(--s5)}
+    .feature__icon{grid-row:auto; margin-bottom:var(--s3)}
+    .feature h3{margin-bottom:6px}
+    .feature p{grid-column:1}
+  }
 
   /* ---------- products ---------- */
-  .products{display:grid; gap:14px; margin-top:24px}
+  .products{display:grid; gap:var(--s3); margin-top:var(--s5)}
   .product{
-    display:grid; grid-template-columns:96px 1fr; gap:14px;
-    background:var(--card); border:1.5px solid var(--line); border-radius:var(--radius);
-    padding:13px; box-shadow:var(--shadow); transition:border-color .15s ease, background .15s ease;
+    display:grid; grid-template-columns:104px minmax(0,1fr); gap:var(--s3) var(--s4);
+    background:var(--surface); border:1.5px solid var(--line); border-radius:var(--radius);
+    padding:var(--s3); box-shadow:var(--shadow-1);
+    transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;
   }
-  .product.is-selected{border-color:var(--orange); background:#fffaf5}
-  .product__thumb{
-    width:96px; height:96px; border-radius:13px; overflow:hidden; background:#f3e7d8;
-  }
-  .product__thumb img{width:100%; height:100%; object-fit:cover}
-  .product__body{min-width:0; display:flex; flex-direction:column}
+  .product.is-selected{border-color:var(--orange); background:#fffaf6; box-shadow:0 8px 24px rgba(217,85,31,.14)}
+  .product__thumb{width:104px; height:104px; border-radius:12px; overflow:hidden; background:#f3e7d8; align-self:start}
+  .product__thumb img{width:100%; height:100%; object-fit:cover; display:block}
+  .product__body{min-width:0; display:flex; flex-direction:column; gap:2px}
   .product__tag{
-    align-self:flex-start; font-size:11px; font-weight:700; letter-spacing:.04em;
-    color:var(--green); background:#eef3ea; padding:2px 8px; border-radius:999px; margin-bottom:5px;
+    align-self:flex-start; font-size:11.5px; font-weight:800; letter-spacing:.02em;
+    color:var(--green); background:var(--green-soft); padding:3px 9px; border-radius:999px;
+    margin-bottom:6px;
   }
-  .product__name{font-size:16.5px; font-weight:700; letter-spacing:-.02em; line-height:1.35}
-  .product__desc{font-size:13px; color:var(--muted); margin-top:4px; line-height:1.5}
-  .product__foot{display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin-top:auto; padding-top:8px}
-  .product__price{font-size:17px; font-weight:800; letter-spacing:-.02em}
-  .product__price small{font-size:12px; font-weight:600; color:var(--muted); margin-left:3px}
-  .stepper{display:flex; align-items:center; gap:2px; background:#f7ece0; border-radius:999px; padding:3px}
+  .product__name{font-size:17px; font-weight:800; letter-spacing:-.025em; line-height:1.35}
+  .product__desc{
+    font-size:13.5px; color:var(--muted); margin-top:6px; line-height:1.6;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .product__foot{
+    display:flex; align-items:center; justify-content:space-between; gap:var(--s3);
+    margin-top:auto; padding-top:var(--s3); flex-wrap:wrap;
+  }
+  .product__price{font-size:19px; font-weight:800; letter-spacing:-.03em; white-space:nowrap}
+  .product__price small{font-size:12.5px; font-weight:600; color:var(--muted); margin-left:4px; letter-spacing:0}
+  .stepper{display:inline-flex; align-items:center; gap:2px; background:#f5e9db; border-radius:999px; padding:3px; flex:0 0 auto}
   .stepper button{
-    width:38px; height:38px; border:0; border-radius:999px; background:#fff;
-    font-size:19px; font-weight:700; color:var(--ink); cursor:pointer; line-height:1;
-    box-shadow:0 1px 4px rgba(80,53,30,.12);
+    width:44px; height:44px; border:0; border-radius:999px; background:#fff;
+    font-size:20px; font-weight:700; color:var(--ink); cursor:pointer; line-height:1;
+    box-shadow:0 1px 4px rgba(70,50,30,.14);
+    transition:background .14s ease, color .14s ease;
   }
   .stepper button:hover:not([disabled]){background:var(--orange-soft); color:var(--orange-dark)}
-  .stepper button[disabled]{opacity:.4; cursor:default; box-shadow:none}
-  .stepper output{min-width:30px; text-align:center; font-weight:800; font-size:15px}
-  .product__pick{
-    grid-column:1 / -1; margin-top:2px;
+  .stepper button[disabled]{opacity:.35; cursor:default; box-shadow:none}
+  .stepper output{min-width:34px; text-align:center; font-weight:800; font-size:15.5px; font-variant-numeric:tabular-nums}
+  @media (min-width:768px){
+    .products{grid-template-columns:1fr 1fr; gap:var(--s5); margin-top:var(--s6)}
+    .product{grid-template-columns:1fr; padding:0; overflow:hidden; gap:0; align-content:start}
+    .product__thumb{width:100%; height:auto; aspect-ratio:16/10; border-radius:0}
+    .product__body{padding:var(--s4) var(--s5) var(--s5)}
+    .product__name{font-size:18.5px}
+    .product__desc{font-size:14px; -webkit-line-clamp:2; min-height:2.9em}
+    .product__foot{justify-content:space-between; padding-top:var(--s4)}
   }
-  .product__pick .btn{min-height:44px; font-size:14px; border-radius:12px}
 
-  /* ---------- order summary card ---------- */
+  /* ---------- cart summary ---------- */
   .cartbar{
-    margin-top:20px; padding:16px 18px; border-radius:var(--radius);
-    background:#2b2118; color:#fdf6ec; box-shadow:0 10px 26px rgba(43,33,24,.22);
+    margin-top:var(--s5); padding:var(--s4) var(--s5); border-radius:var(--radius);
+    background:#2a2018; color:#fdf6ec; box-shadow:0 12px 30px rgba(42,32,24,.22);
   }
-  .cartbar__row{display:flex; align-items:center; justify-content:space-between; gap:12px}
-  .cartbar__label{font-size:13px; color:#cdbbaa}
-  .cartbar__total{font-size:22px; font-weight:800; letter-spacing:-.02em}
-  .cartbar__empty{font-size:14px; color:#d9c8b6}
-  .cartbar .btn{margin-top:12px; min-height:50px}
+  .cartbar__figures{display:flex; flex-direction:column; gap:2px}
+  .cartbar__label{font-size:13px; color:#c8b5a2; font-weight:600}
+  .cartbar__label b{color:#fdf6ec; font-weight:700; margin-left:4px}
+  .cartbar__total{font-size:26px; font-weight:800; letter-spacing:-.03em; line-height:1.25; font-variant-numeric:tabular-nums}
+  .cartbar__empty{font-size:13.5px; color:#b7a493}
+  .cartbar .btn{margin-top:var(--s3)}
+  @media (min-width:768px){
+    .cartbar{display:flex; align-items:center; justify-content:space-between; gap:var(--s5); padding:var(--s4) var(--s5)}
+    .cartbar .btn{margin-top:0; min-width:220px}
+  }
 
-  /* ---------- form ---------- */
+  /* ---------- order form ---------- */
   .form-card{
-    background:var(--card); border:1px solid var(--line); border-radius:22px;
-    padding:22px 18px; box-shadow:var(--shadow); margin-top:22px;
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:var(--s5) var(--s4); box-shadow:var(--shadow-1); margin-top:var(--s5);
   }
-  .form-section + .form-section{
-    margin-top:26px; padding-top:24px; border-top:1px dashed var(--line);
+  @media (min-width:1024px){
+    .form-card{display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:var(--s7); padding:var(--s6)}
+    .form-sections{order:1}
+    .form-summary{order:2; align-self:start; position:sticky; top:calc(var(--header-h) + 24px); margin-bottom:0}
   }
-  .form-section__title{
-    display:flex; align-items:center; gap:8px;
-    font-size:16px; font-weight:800; letter-spacing:-.01em; margin-bottom:14px;
-  }
+  .form-section + .form-section{margin-top:var(--s6); padding-top:var(--s5); border-top:1px dashed var(--line)}
+  .form-section__title{display:flex; align-items:center; gap:8px; font-size:16.5px; font-weight:800; letter-spacing:-.02em; margin-bottom:var(--s4)}
   .form-section__title span{
-    width:22px; height:22px; border-radius:50%; background:var(--orange); color:#fff;
-    display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:800;
+    width:24px; height:24px; border-radius:50%; background:var(--orange); color:#fff;
+    display:inline-flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:800;
   }
-  .field{margin-bottom:14px}
+  .field{margin-bottom:var(--s4)}
   .field:last-child{margin-bottom:0}
-  .field > label{
-    display:block; font-size:13.5px; font-weight:700; margin-bottom:6px; color:var(--ink-soft);
-  }
+  .field > label{display:block; font-size:14px; font-weight:700; margin-bottom:7px; color:var(--ink-soft)}
   .field .req{color:var(--orange); margin-left:3px}
-  .field .hint{display:block; font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5}
+  .field .hint{display:block; font-size:12.5px; color:var(--muted); margin-top:7px; line-height:1.55}
   .field input[type=text],.field input[type=tel],.field textarea{
-    width:100%; min-height:50px; padding:13px 14px; font-size:16px; color:var(--ink);
-    background:#fff; border:1.5px solid var(--line); border-radius:13px;
-    font-family:inherit; line-height:1.5; transition:border-color .15s ease, box-shadow .15s ease;
+    width:100%; min-height:52px; padding:13px 15px; font-size:16px; color:var(--ink);
+    background:#fff; border:1.5px solid var(--line-strong); border-radius:12px;
+    font-family:inherit; line-height:1.5;
+    transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;
     -webkit-appearance:none;
   }
-  .field textarea{min-height:88px; resize:vertical}
+  .field textarea{min-height:92px; resize:vertical}
+  .field input::placeholder,.field textarea::placeholder{color:#a89786}
   .field input:focus,.field textarea:focus{
-    outline:0; border-color:var(--orange); box-shadow:0 0 0 3px rgba(226,96,42,.13);
+    outline:0; border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14);
   }
-  .field input[readonly]{background:#f8f2ea; color:var(--ink-soft)}
-  .field-error{display:none; font-size:12.5px; color:#c0361a; margin-top:6px; font-weight:600}
-  .field.has-error input,.field.has-error textarea{border-color:#e2a08d; background:#fffafa}
+  .field input[readonly]{background:#f6eee4; color:var(--ink-soft); border-color:var(--line)}
+  .field-error{display:none; font-size:12.5px; color:#b32b12; margin-top:7px; font-weight:700}
+  .field.has-error input,.field.has-error textarea{border-color:#d98770; background:#fffafa}
   .field.has-error .field-error{display:block}
-  .grid-2{display:grid; gap:0 12px; grid-template-columns:1fr}
+  .grid-2{display:grid; gap:0 var(--s3); grid-template-columns:1fr}
   @media (min-width:560px){ .grid-2{grid-template-columns:1fr 1fr} }
   .check{
-    display:flex; align-items:flex-start; gap:10px;
-    padding:13px 14px; border:1.5px solid var(--line); border-radius:13px; background:#fff;
-    font-size:14px; font-weight:600; cursor:pointer; line-height:1.5;
+    display:flex; align-items:flex-start; gap:10px; min-height:52px;
+    padding:13px 15px; border:1.5px solid var(--line-strong); border-radius:12px; background:#fff;
+    font-size:14.5px; font-weight:600; cursor:pointer; line-height:1.5;
   }
-  .check input[type=checkbox]{
-    width:22px; height:22px; margin:0; flex:0 0 auto; accent-color:var(--orange); cursor:pointer;
-  }
-  .check--muted{background:var(--orange-soft); border-color:#f3d7c2}
-  .check.has-error{border-color:#e2a08d; background:#fffafa}
-  .details{margin-top:8px; font-size:12.5px; color:var(--muted)}
-  .details summary{cursor:pointer; font-weight:700; color:var(--ink-soft); padding:6px 0}
+  .check input[type=checkbox]{width:22px; height:22px; margin:0; flex:0 0 auto; accent-color:var(--orange); cursor:pointer}
+  .check--muted{background:var(--orange-soft); border-color:#f0d3bd}
+  .check.has-error{border-color:#d98770; background:#fffafa}
+  .details{margin-top:10px; font-size:12.8px; color:var(--muted)}
+  .details summary{cursor:pointer; font-weight:700; color:var(--ink-soft); padding:8px 0; min-height:36px}
   .details ul{margin:4px 0 0; padding-left:16px; list-style:disc}
-  .details li{margin:2px 0}
+  .details li{margin:3px 0}
 
   .form-summary{
-    margin-bottom:22px; padding:16px; border-radius:15px; background:#fbf3e9; border:1px solid #f0e0cc;
+    margin-bottom:var(--s5); padding:var(--s4); border-radius:var(--radius);
+    background:var(--surface-alt); border:1px solid var(--line);
   }
-  .form-summary h4{margin:0 0 10px; font-size:14px; font-weight:800}
-  .form-summary__line{display:flex; justify-content:space-between; gap:10px; font-size:13.5px; padding:3px 0; color:var(--ink-soft)}
-  .form-summary__line strong{font-weight:700}
+  .form-summary h4{margin:0 0 var(--s3); font-size:14px; font-weight:800; letter-spacing:-.01em}
+  .form-summary__line{display:flex; justify-content:space-between; gap:10px; font-size:13.5px; padding:4px 0; color:var(--ink-soft)}
+  .form-summary__line strong{font-weight:700; white-space:nowrap}
   .form-summary__total{
-    display:flex; justify-content:space-between; gap:10px; margin-top:10px; padding-top:10px;
-    border-top:1px dashed #e3cdb4; font-size:15.5px; font-weight:800;
+    display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+    margin-top:var(--s3); padding-top:var(--s3);
+    border-top:1px dashed var(--line-strong); font-size:14.5px; font-weight:800;
   }
-  .form-summary__total span:last-child{color:var(--orange-dark); font-size:18px}
+  .form-summary__total span:last-child{color:var(--orange-dark); font-size:22px; letter-spacing:-.03em; font-variant-numeric:tabular-nums}
 
-  .submit-area{margin-top:22px}
-  .submit-area .btn{min-height:56px; font-size:17px; border-radius:16px}
-  .submit-note{margin-top:10px; font-size:12.5px; color:var(--muted); text-align:center; line-height:1.6}
+  .submit-area{margin-top:var(--s6)}
+  .submit-area .btn{min-height:58px; font-size:17px; border-radius:14px}
+  .submit-note{margin-top:12px; font-size:12.8px; color:var(--muted); text-align:center; line-height:1.65}
 
   /* ---------- done ---------- */
-  .done{padding:8px 0 40px}
+  .done{padding-top:var(--s4)}
   .done[hidden]{display:none}
   .done__card{
-    background:var(--card); border:1px solid var(--line); border-radius:22px;
-    padding:26px 18px; box-shadow:var(--shadow); text-align:center;
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:var(--s6) var(--s5); box-shadow:var(--shadow-1); text-align:center;
   }
+  @media (min-width:768px){ .done__card{padding:var(--s7); max-width:720px; margin:0 auto} }
   .done__mark{
-    width:64px; height:64px; margin:0 auto 14px; border-radius:50%;
-    background:#eef5ea; color:var(--green); display:flex; align-items:center; justify-content:center;
-    font-size:32px;
+    width:64px; height:64px; margin:0 auto var(--s4); border-radius:50%;
+    background:var(--green-soft); color:var(--green); display:flex; align-items:center; justify-content:center;
+    font-size:30px; font-weight:700;
   }
-  .done h2{font-size:22px}
-  .done__sub{color:var(--muted); font-size:14px; margin-top:8px}
-  .done__total{
-    margin:20px auto 0; padding:16px; border-radius:15px; background:var(--orange-soft); border:1px solid #f3d7c2;
-  }
-  .done__total dt{font-size:13px; color:#96552f; font-weight:700}
-  .done__total dd{margin:4px 0 0; font-size:28px; font-weight:800; letter-spacing:-.03em; color:var(--orange-dark)}
-  .bank{
-    margin-top:16px; padding:18px 16px; border-radius:15px; background:#f7f2ea; border:1px solid var(--line); text-align:left;
-  }
-  .bank h3{font-size:14.5px; margin-bottom:10px}
-  .bank__row{display:flex; justify-content:space-between; gap:12px; font-size:14px; padding:4px 0}
+  .done h2{font-size:clamp(21px,3vw,26px)}
+  .done__sub{color:var(--muted); font-size:14px; margin-top:10px}
+  .done__total{margin:var(--s5) auto 0; padding:var(--s4); border-radius:var(--radius); background:var(--orange-soft); border:1px solid #f0d3bd}
+  .done__total dt{font-size:13px; color:#8d4a24; font-weight:700}
+  .done__total dd{margin:6px 0 0; font-size:32px; font-weight:800; letter-spacing:-.035em; color:var(--orange-dark); font-variant-numeric:tabular-nums}
+  .bank{margin-top:var(--s4); padding:var(--s4); border-radius:var(--radius); background:var(--surface-alt); border:1px solid var(--line); text-align:left}
+  .bank h3{font-size:14.5px; margin-bottom:10px; font-weight:800}
+  .bank__row{display:flex; justify-content:space-between; gap:12px; font-size:14.5px; padding:5px 0}
   .bank__row span:first-child{color:var(--muted); flex:0 0 auto}
   .bank__row span:last-child{font-weight:700; word-break:break-all; text-align:right}
   .bank__actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap}
-  .bank__actions .btn{flex:1 1 140px; min-height:46px; font-size:14px}
-  .bank__pending{font-size:13.5px; color:#8a5a1f; background:#fff8e8; border:1px solid #f0dfb8; border-radius:12px; padding:11px 12px; line-height:1.6}
-  .done__items{text-align:left; margin-top:18px; border-top:1px dashed var(--line); padding-top:14px}
-  .done__items h3{font-size:14px; margin-bottom:8px}
-  .done__items li{display:flex; justify-content:space-between; gap:10px; font-size:13.5px; padding:4px 0; color:var(--ink-soft)}
-  .done__meta{margin-top:14px; text-align:left; font-size:13px; color:var(--muted); line-height:1.7}
+  .bank__actions .btn{flex:1 1 140px; min-height:48px; font-size:14.5px}
+  .bank__pending{font-size:13.5px; color:#7d5414; background:#fff8ea; border:1px solid #efe0bf; border-radius:12px; padding:12px 14px; line-height:1.65}
+  .done__items{text-align:left; margin-top:var(--s5); border-top:1px dashed var(--line); padding-top:var(--s4)}
+  .done__items h3{font-size:14.5px; margin-bottom:10px; font-weight:800}
+  .done__items li{display:flex; justify-content:space-between; gap:10px; font-size:14px; padding:5px 0; color:var(--ink-soft)}
+  .done__meta{margin-top:var(--s4); text-align:left; font-size:13.5px; color:var(--muted); line-height:1.8}
   .done__meta b{color:var(--ink-soft); font-weight:700}
-  .done__next{margin-top:16px; font-size:13.5px; color:var(--ink-soft); background:#f1f5ee; border:1px solid #dbe6d5; border-radius:12px; padding:12px 13px; text-align:left; line-height:1.65}
-  .done__actions{display:flex; flex-direction:column; gap:8px; margin-top:18px}
-  .alert{
-    margin-top:14px; padding:13px 14px; border-radius:13px; font-size:13.5px; line-height:1.6; text-align:left;
-    background:#fdeceb; border:1px solid #f3c9c4; color:#8f2a1b;
-  }
+  .done__next{margin-top:var(--s4); font-size:13.8px; color:var(--ink-soft); background:var(--green-soft); border:1px solid #d8e5d2; border-radius:12px; padding:14px 15px; text-align:left; line-height:1.7}
+  .done__actions{display:flex; flex-direction:column; gap:8px; margin-top:var(--s5)}
+  .alert{margin-top:var(--s4); padding:14px 15px; border-radius:12px; font-size:13.5px; line-height:1.65; text-align:left; background:#fdeceb; border:1px solid #f2c6c1; color:#8d2416}
   .alert[hidden]{display:none}
 
   /* ---------- steps / faq ---------- */
-  .steps{display:grid; gap:12px; margin-top:22px; grid-template-columns:1fr}
-  @media (min-width:620px){ .steps{grid-template-columns:repeat(3,1fr)} }
-  .step{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px}
-  .step b{display:inline-block; font-size:12px; letter-spacing:.08em; color:var(--orange); font-weight:800}
-  .step h3{font-size:15.5px; margin:6px 0 6px}
-  .step p{font-size:13.5px; color:var(--muted)}
-  .faq{margin-top:18px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+  .steps{display:grid; gap:var(--s3); margin-top:var(--s6); counter-reset:step}
+  @media (min-width:768px){ .steps{grid-template-columns:repeat(3,1fr); gap:var(--s4)} }
+  .step{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:var(--s5)}
+  .step b{
+    display:inline-block; font-size:11.5px; letter-spacing:.1em; color:var(--orange);
+    font-weight:800; background:var(--orange-soft); padding:3px 9px; border-radius:999px;
+  }
+  .step h3{font-size:16px; margin:var(--s3) 0 8px; letter-spacing:-.02em}
+  .step p{font-size:13.8px; color:var(--muted); line-height:1.65}
+  .faq{margin-top:var(--s6); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+  @media (min-width:768px){ .faq{max-width:860px} }
   .faq details{border-bottom:1px solid var(--line)}
   .faq details:last-child{border-bottom:0}
   .faq summary{
-    cursor:pointer; padding:16px 18px; font-size:14.5px; font-weight:700; list-style:none;
-    display:flex; justify-content:space-between; gap:12px; align-items:center;
+    cursor:pointer; padding:18px 20px; font-size:15px; font-weight:700; list-style:none;
+    display:flex; justify-content:space-between; gap:12px; align-items:center; letter-spacing:-.01em;
   }
+  .faq summary:hover{background:#fdf6ee}
   .faq summary::-webkit-details-marker{display:none}
-  .faq summary::after{content:"+"; color:var(--orange); font-size:19px; font-weight:700; flex:0 0 auto}
+  .faq summary::after{content:"+"; color:var(--orange); font-size:20px; font-weight:700; flex:0 0 auto; line-height:1}
   .faq details[open] summary::after{content:"–"}
-  .faq p{padding:0 18px 16px; font-size:13.8px; color:var(--muted); line-height:1.7}
+  .faq details[open] summary{background:#fdf6ee}
+  .faq p{padding:0 20px 18px; font-size:14px; color:var(--muted); line-height:1.75; max-width:60em}
 
-  .gallery{display:grid; gap:10px; margin-top:22px; grid-template-columns:1fr 1fr}
-  .gallery figure{margin:0; border-radius:15px; overflow:hidden; background:#f3e7d8}
+  /* ---------- gallery ---------- */
+  .gallery{display:grid; gap:var(--s3); margin-top:var(--s6); grid-template-columns:1fr 1fr}
+  @media (min-width:768px){ .gallery{gap:var(--s5)} }
+  .gallery figure{margin:0; border-radius:var(--radius); overflow:hidden; background:#f3e7d8; border:1px solid var(--line)}
   .gallery img{aspect-ratio:4/3; object-fit:cover; width:100%}
-  .gallery figcaption{font-size:12px; color:var(--muted); padding:8px 10px; background:var(--card)}
+  .gallery figcaption{font-size:12.5px; color:var(--ink-soft); font-weight:600; padding:10px 12px; background:var(--surface)}
+  .farm-note{margin-top:var(--s5); font-size:13.5px; color:var(--muted); line-height:1.75}
+  .farm-note b{color:var(--ink-soft)}
 
   /* ---------- footer ---------- */
-  footer{background:#241b13; color:#cbb9a7; padding:34px 0 44px; font-size:13px; margin-top:40px}
-  footer .wrap{display:grid; gap:8px}
-  footer strong{color:#fdf6ec; font-size:15px; letter-spacing:-.01em}
-  footer a{color:#f0d7bd}
-  footer .fine{font-size:11.8px; color:#9c8b7c; line-height:1.75; margin-top:8px}
+  footer{background:#211a13; color:#c3b1a0; padding:clamp(40px,5vw,64px) 0 clamp(48px,6vw,72px); font-size:13.5px; line-height:1.75}
+  .footer__grid{display:grid; gap:var(--s5)}
+  @media (min-width:768px){ .footer__grid{grid-template-columns:1.4fr 1fr 1fr; gap:var(--s6) var(--s7)} }
+  footer h3{font-size:13px; letter-spacing:.06em; color:#f6e9db; font-weight:800; margin-bottom:10px; text-transform:uppercase}
+  footer strong{color:#fdf6ec; font-size:17px; letter-spacing:-.02em; font-weight:800}
+  footer a{color:#f2d9be; text-decoration:underline; text-underline-offset:2px}
+  footer a:hover{color:#fff}
+  .footer__brand p{margin-top:10px; max-width:34em}
+  .footer__contact a{font-size:17px; font-weight:800; color:#fdf6ec; letter-spacing:-.01em}
+  .footer__address{font-style:normal; color:#9c8b7c}
+  .fine{grid-column:1 / -1; font-size:11.8px; color:#8f8072; line-height:1.8; border-top:1px solid #3a2f24; padding-top:var(--s4); margin-top:var(--s2)}
 
-  /* ---------- sticky cart ---------- */
+  /* ---------- sticky cart (mobile) ---------- */
   .sticky-cart{
-    position:fixed; left:0; right:0; bottom:0; z-index:50; padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+    position:fixed; left:0; right:0; bottom:0; z-index:50;
+    padding:10px 14px calc(10px + env(safe-area-inset-bottom));
     background:rgba(255,253,250,.97); border-top:1px solid var(--line);
-    box-shadow:0 -6px 20px rgba(80,53,30,.1);
+    box-shadow:0 -8px 24px rgba(70,50,30,.12);
     transform:translateY(120%); transition:transform .22s ease, visibility .22s ease;
-    visibility:hidden;
+    visibility:hidden; backdrop-filter:blur(8px);
   }
   .sticky-cart.is-visible{transform:translateY(0); visibility:visible}
-  .sticky-cart__inner{display:flex; align-items:center; gap:12px; max-width:760px; margin:0 auto}
+  .sticky-cart__inner{display:flex; align-items:center; gap:14px; max-width:var(--container); margin:0 auto}
   .sticky-cart__info{flex:1 1 auto; min-width:0}
-  .sticky-cart__qty{font-size:11.5px; color:var(--muted); font-weight:600}
-  .sticky-cart__total{font-size:18px; font-weight:800; letter-spacing:-.02em; line-height:1.2}
-  .sticky-cart .btn{flex:0 0 auto; min-height:48px; padding:0 22px; font-size:15px}
+  .sticky-cart__qty{font-size:12px; color:var(--muted); font-weight:600}
+  .sticky-cart__total{font-size:19px; font-weight:800; letter-spacing:-.03em; line-height:1.25; font-variant-numeric:tabular-nums}
+  .sticky-cart .btn{flex:0 0 auto; min-height:50px; padding:0 24px; font-size:15.5px}
+  @media (min-width:900px){ .sticky-cart{display:none !important} }
 
   /* ---------- toast ---------- */
   .toast{
     position:fixed; left:50%; bottom:96px; transform:translate(-50%,14px);
-    background:#2b2118; color:#fff; font-size:13.5px; font-weight:600;
-    padding:11px 18px; border-radius:999px; z-index:80; opacity:0; pointer-events:none;
+    background:#241a12; color:#fff; font-size:13.5px; font-weight:600;
+    padding:12px 20px; border-radius:999px; z-index:80; opacity:0; pointer-events:none;
     transition:opacity .2s ease, transform .2s ease; max-width:88vw; text-align:center;
+    box-shadow:var(--shadow-2);
   }
   .toast.is-visible{opacity:1; transform:translate(-50%,0)}
 
-  body.has-sticky{padding-bottom:86px}
+  body.has-sticky{padding-bottom:92px}
 
   @media (prefers-reduced-motion:reduce){
     html{scroll-behavior:auto}
@@ -372,11 +471,12 @@
 </style>
 </head>
 <body>
+
 <header class="topbar">
   <div class="topbar__inner">
     <a class="brand" href="#top" aria-label="효돈농원 홈">
       <span class="brand__mark" aria-hidden="true">🍊</span>
-      <span>
+      <span class="brand__text">
         <strong>효돈농원</strong>
         <em>제주 서귀포 하효동</em>
       </span>
@@ -384,43 +484,53 @@
     <nav class="topbar__nav" aria-label="주요 메뉴">
       <a href="#products">상품</a>
       <a href="#order">주문서</a>
-      <a class="topbar__call" href="tel:01026961326">전화 주문</a>
+      <a href="#faq">배송·문의</a>
+      <a class="topbar__call" href="tel:01026961326"><span aria-hidden="true">☎</span> 전화 주문</a>
     </nav>
   </div>
 </header>
 
 <main id="top">
-  <section class="hero">
-    <img class="hero__img" src="assets/hero.jpg" alt="제주 서귀포 하효동 감귤 농장의 감귤나무와 수확한 감귤 상자" fetchpriority="high">
-    <div class="hero__shade" aria-hidden="true"></div>
-    <div class="hero__content">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero__media">
+      <img class="hero__img" src="assets/hero.jpg" alt="제주 서귀포 하효동 효돈농원 감귤밭의 감귤나무와 수확한 노지감귤" width="1400" height="933" fetchpriority="high" decoding="async">
+      <div class="hero__shade" aria-hidden="true"></div>
+    </div>
+    <div class="hero__inner wrap">
       <p class="hero__eyebrow">제주 서귀포 하효동 · 산지직송</p>
-      <h1>오늘 딴 귤을<br>오늘 보내드립니다</h1>
-      <p class="hero__desc">효돈농원이 직접 기르고 한 알씩 선별한 노지감귤과 황금향. 중간 유통 없이 농장에서 바로 보내드립니다.</p>
+      <h1 id="hero-title">오늘 딴 귤을<br>오늘 보내드립니다</h1>
+      <p class="hero__desc">효돈농원이 직접 기르고 한 알씩 선별한 노지감귤과 황금향. 중간 유통 없이 농장에서 바로 보냅니다.</p>
+      <p class="hero__meta">노지감귤 10kg <b>21,000원</b>부터 · 로젠택배비 포함</p>
       <div class="hero__actions">
-        <a class="btn btn--primary" href="#products">상품 보고 주문하기</a>
-        <a class="btn btn--ghost" href="tel:01026961326">농원에 전화하기</a>
+        <a class="btn btn--primary btn--lg" href="#products">상품 보고 주문하기</a>
+        <a class="btn btn--ghost btn--lg" href="tel:01026961326">전화로 주문하기</a>
       </div>
     </div>
-    <ul class="badges" aria-label="효돈농원 특징">
-      <li>서귀포 하효동 산지직송</li>
-      <li>당일 수확·선별</li>
-      <li>로젠택배 무료배송</li>
-    </ul>
   </section>
+
+  <div class="trust">
+    <ul class="wrap trust__list" aria-label="효돈농원 특징">
+      <li><span aria-hidden="true">🌱</span>하효동 산지직송</li>
+      <li><span aria-hidden="true">🧺</span>당일 수확·선별</li>
+      <li><span aria-hidden="true">🚚</span>로젠택배 무료배송</li>
+    </ul>
+  </div>
 
   <div class="wrap">
     <div class="notice" id="setupNotice" hidden>
-      <span aria-hidden="true">🔧</span>
-      <span><strong>준비 중인 페이지입니다.</strong> 지금은 주문이 자동 저장되지 않습니다. 주문 후 <strong>‘주문 내역 복사’</strong>로 문자(010-2696-1326)를 보내주셔야 접수됩니다.</span>
+      <span aria-hidden="true">📮</span>
+      <span><strong>지금은 주문서를 문자로 접수하고 있습니다.</strong> 주문 후 <strong>‘주문 내역 복사’</strong>를 눌러 <a href="tel:01026961326">010-2696-1326</a>으로 보내주시면 확인 후 출고됩니다.</span>
     </div>
   </div>
 
-  <section class="section section--tight" aria-labelledby="why-title">
+  <section class="section section--alt" aria-labelledby="why-title">
     <div class="wrap">
-      <p class="eyebrow">Why HYODON</p>
-      <h2 id="why-title">농장에서 문 앞까지,<br>한 번도 거치지 않는 귤</h2>
-      <ul class="features" style="margin-top:24px">
+      <div class="section-head">
+        <p class="eyebrow">Why HYODON</p>
+        <h2 id="why-title">농장에서 문 앞까지,<br class="br-md"> 한 번도 거치지 않는 귤</h2>
+        <p class="lead">중간 유통 없이, 수확한 날 그대로 보내드립니다.</p>
+      </div>
+      <ul class="features">
         <li class="feature">
           <div class="feature__icon" aria-hidden="true">🌱</div>
           <h3>하효동 산지직송</h3>
@@ -442,31 +552,32 @@
 
   <section class="section" id="products" aria-labelledby="products-title">
     <div class="wrap">
-      <p class="eyebrow">Menu</p>
-      <h2 id="products-title">상품 선택</h2>
-      <p class="lead">수량을 고르면 금액이 자동으로 계산됩니다. 여러 상품을 한 번에 담아 한 번에 입금하실 수 있어요.</p>
+      <div class="section-head">
+        <p class="eyebrow">Menu</p>
+        <h2 id="products-title">상품 선택</h2>
+        <p class="lead">수량을 고르면 금액이 자동으로 계산됩니다. 여러 상품을 한 번에 담아 한 번에 입금하실 수 있어요.</p>
+      </div>
 
       <ul class="products" id="productList"></ul>
 
       <div class="cartbar" id="cartBar">
-        <div class="cartbar__row">
-          <span class="cartbar__label">담은 상품</span>
+        <div class="cartbar__figures">
+          <span class="cartbar__label">담은 상품 <b id="cartQtyText">0박스</b></span>
+          <span class="cartbar__total" id="cartTotalText" aria-live="polite">0원</span>
           <span class="cartbar__empty" id="cartEmptyText">아직 선택한 상품이 없습니다</span>
         </div>
-        <div class="cartbar__row" style="margin-top:6px">
-          <span class="cartbar__total" id="cartTotalText" aria-live="polite">0원</span>
-          <span class="cartbar__label" id="cartQtyText">0박스</span>
-        </div>
-        <a class="btn btn--primary btn--block" id="goOrderBtn" href="#order">주문서 작성하기</a>
+        <a class="btn btn--primary" id="goOrderBtn" href="#order" aria-disabled="true" style="opacity:.55">주문서 작성하기</a>
       </div>
     </div>
   </section>
 
-  <section class="section section--tight" aria-labelledby="order-title">
+  <section class="section section--alt" id="order" aria-labelledby="order-title">
     <div class="wrap">
-      <p class="eyebrow">Order</p>
-      <h2 id="order-title">주문서 작성</h2>
-      <p class="lead">아래 내용을 확인하고 주문해 주세요. 입금이 확인되면 순서대로 출고합니다.</p>
+      <div class="section-head">
+        <p class="eyebrow">Order</p>
+        <h2 id="order-title">주문서 작성</h2>
+        <p class="lead">아래 내용을 확인하고 주문해 주세요. 입금이 확인되면 순서대로 출고합니다.</p>
+      </div>
 
       <div id="orderFormWrap">
         <form class="form-card" id="orderForm" novalidate>
@@ -476,78 +587,80 @@
             <div class="form-summary__total"><span>총 입금 금액</span><span id="formSummaryTotal">0원</span></div>
           </div>
 
-          <div class="form-section">
-            <h3 class="form-section__title"><span aria-hidden="true">1</span>주문하시는 분</h3>
-            <div class="field" data-field="ordererName">
-              <label for="ordererName">이름<span class="req" aria-hidden="true">*</span></label>
-              <input id="ordererName" name="ordererName" type="text" autocomplete="name" placeholder="예: 홍길동" required>
-              <p class="field-error">이름을 입력해 주세요.</p>
+          <div class="form-sections">
+            <div class="form-section">
+              <h3 class="form-section__title"><span aria-hidden="true">1</span>주문하시는 분</h3>
+              <div class="field" data-field="ordererName">
+                <label for="ordererName">이름<span class="req" aria-hidden="true">*</span></label>
+                <input id="ordererName" name="ordererName" type="text" autocomplete="name" placeholder="예: 홍길동" required>
+                <p class="field-error">이름을 입력해 주세요.</p>
+              </div>
+              <div class="field" data-field="ordererPhone">
+                <label for="ordererPhone">휴대폰 번호<span class="req" aria-hidden="true">*</span></label>
+                <input id="ordererPhone" name="ordererPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="010-0000-0000" required>
+                <p class="field-error">연락 가능한 휴대폰 번호를 정확히 입력해 주세요.</p>
+              </div>
             </div>
-            <div class="field" data-field="ordererPhone">
-              <label for="ordererPhone">휴대폰 번호<span class="req" aria-hidden="true">*</span></label>
-              <input id="ordererPhone" name="ordererPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="010-0000-0000" required>
-              <p class="field-error">연락 가능한 휴대폰 번호를 정확히 입력해 주세요.</p>
-            </div>
-          </div>
 
-          <div class="form-section">
-            <h3 class="form-section__title"><span aria-hidden="true">2</span>받으시는 분</h3>
-            <label class="check check--muted" for="sameReceiver" style="margin-bottom:14px">
-              <input type="checkbox" id="sameReceiver" checked>
-              <span>주문자와 받는 분이 같습니다</span>
-            </label>
-            <div class="field" data-field="receiverName">
-              <label for="receiverName">받는 분 이름<span class="req" aria-hidden="true">*</span></label>
-              <input id="receiverName" name="receiverName" type="text" autocomplete="name" placeholder="받는 분 성함" required>
-              <p class="field-error">받는 분 이름을 입력해 주세요.</p>
+            <div class="form-section">
+              <h3 class="form-section__title"><span aria-hidden="true">2</span>받으시는 분</h3>
+              <label class="check check--muted" for="sameReceiver" style="margin-bottom:16px">
+                <input type="checkbox" id="sameReceiver" checked>
+                <span>주문자와 받는 분이 같습니다</span>
+              </label>
+              <div class="field" data-field="receiverName">
+                <label for="receiverName">받는 분 이름<span class="req" aria-hidden="true">*</span></label>
+                <input id="receiverName" name="receiverName" type="text" autocomplete="name" placeholder="받는 분 성함" required>
+                <p class="field-error">받는 분 이름을 입력해 주세요.</p>
+              </div>
+              <div class="field" data-field="receiverPhone">
+                <label for="receiverPhone">받는 분 연락처<span class="req" aria-hidden="true">*</span></label>
+                <input id="receiverPhone" name="receiverPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="010-0000-0000" required>
+                <p class="field-error">받는 분 연락처를 정확히 입력해 주세요.</p>
+              </div>
+              <div class="field" data-field="receiverAddress">
+                <label for="receiverAddress">받는 주소<span class="req" aria-hidden="true">*</span></label>
+                <textarea id="receiverAddress" name="receiverAddress" rows="3" autocomplete="street-address" placeholder="예: 서울시 강남구 테헤란로 123, 101동 1004호" required></textarea>
+                <span class="hint">도로명 주소와 동·호수를 함께 적어주세요.</span>
+                <p class="field-error">배송받으실 주소를 입력해 주세요.</p>
+              </div>
             </div>
-            <div class="field" data-field="receiverPhone">
-              <label for="receiverPhone">받는 분 연락처<span class="req" aria-hidden="true">*</span></label>
-              <input id="receiverPhone" name="receiverPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="010-0000-0000" required>
-              <p class="field-error">받는 분 연락처를 정확히 입력해 주세요.</p>
-            </div>
-            <div class="field" data-field="receiverAddress">
-              <label for="receiverAddress">받는 주소<span class="req" aria-hidden="true">*</span></label>
-              <textarea id="receiverAddress" name="receiverAddress" rows="3" autocomplete="street-address" placeholder="예: 서울시 강남구 테헤란로 123, 101동 1004호" required></textarea>
-              <span class="hint">도로명 주소와 동·호수를 함께 적어주세요.</span>
-              <p class="field-error">배송받으실 주소를 입력해 주세요.</p>
-            </div>
-          </div>
 
-          <div class="form-section">
-            <h3 class="form-section__title"><span aria-hidden="true">3</span>입금·요청 사항</h3>
-            <div class="field" data-field="depositor">
-              <label for="depositor">입금자명<span class="req" aria-hidden="true">*</span></label>
-              <input id="depositor" name="depositor" type="text" placeholder="은행에 표시되는 입금자 이름" required>
-              <span class="hint">주문자와 다르면 꼭 적어주세요. 입금 확인이 빨라집니다.</span>
-              <p class="field-error">입금자명을 입력해 주세요.</p>
+            <div class="form-section">
+              <h3 class="form-section__title"><span aria-hidden="true">3</span>입금·요청 사항</h3>
+              <div class="field" data-field="depositor">
+                <label for="depositor">입금자명<span class="req" aria-hidden="true">*</span></label>
+                <input id="depositor" name="depositor" type="text" placeholder="은행에 표시되는 입금자 이름" required>
+                <span class="hint">주문자와 다르면 꼭 적어주세요. 입금 확인이 빨라집니다.</span>
+                <p class="field-error">입금자명을 입력해 주세요.</p>
+              </div>
+              <div class="field" data-field="memo">
+                <label for="memo">요청사항</label>
+                <textarea id="memo" name="memo" rows="3" placeholder="예: 부재 시 경비실에 맡겨주세요 / 선물이라 메시지 카드 넣어주세요"></textarea>
+              </div>
             </div>
-            <div class="field" data-field="memo">
-              <label for="memo">요청사항</label>
-              <textarea id="memo" name="memo" rows="3" placeholder="예: 부재 시 경비실에 맡겨주세요 / 선물이라 메시지 카드 넣어주세요"></textarea>
+
+            <div class="form-section">
+              <h3 class="form-section__title"><span aria-hidden="true">4</span>개인정보 동의</h3>
+              <label class="check" for="agree" id="agreeCheck">
+                <input type="checkbox" id="agree" required>
+                <span>[필수] 개인정보 수집·이용에 동의합니다</span>
+              </label>
+              <details class="details">
+                <summary>수집 항목과 이용 목적 보기</summary>
+                <ul>
+                  <li>수집 항목: 주문자 이름·연락처, 받는 분 이름·연락처·주소, 입금자명, 요청사항</li>
+                  <li>이용 목적: 주문 접수, 입금 확인, 상품 배송, 배송 문의 응대</li>
+                  <li>보유 기간: 주문 처리 완료 후 3개월 (관련 법령상 보존이 필요한 거래 기록은 해당 기간)</li>
+                  <li>동의를 거부하실 수 있으나, 이 경우 주문 접수가 어렵습니다.</li>
+                </ul>
+              </details>
             </div>
-          </div>
 
-          <div class="form-section">
-            <h3 class="form-section__title"><span aria-hidden="true">4</span>개인정보 동의</h3>
-            <label class="check" for="agree" id="agreeCheck">
-              <input type="checkbox" id="agree" required>
-              <span>[필수] 개인정보 수집·이용에 동의합니다</span>
-            </label>
-            <details class="details">
-              <summary>수집 항목과 이용 목적 보기</summary>
-              <ul>
-                <li>수집 항목: 주문자 이름·연락처, 받는 분 이름·연락처·주소, 입금자명, 요청사항</li>
-                <li>이용 목적: 주문 접수, 입금 확인, 상품 배송, 배송 문의 응대</li>
-                <li>보유 기간: 주문 처리 완료 후 3개월 (관련 법령상 보존이 필요한 거래 기록은 해당 기간)</li>
-                <li>동의를 거부하실 수 있으나, 이 경우 주문 접수가 어렵습니다.</li>
-              </ul>
-            </details>
-          </div>
-
-          <div class="submit-area">
-            <button type="submit" class="btn btn--primary btn--block" id="submitBtn">주문하기</button>
-            <p class="submit-note">주문 후 안내되는 계좌로 입금해 주시면 확인 후 출고됩니다.<br>입금 확인은 보통 하루 안에 도와드립니다.</p>
+            <div class="submit-area">
+              <button type="submit" class="btn btn--primary btn--block" id="submitBtn">주문하기</button>
+              <p class="submit-note">주문 후 안내되는 계좌로 입금해 주시면 확인 후 출고됩니다.<br>입금 확인은 보통 하루 안에 도와드립니다.</p>
+            </div>
           </div>
         </form>
       </div>
@@ -594,21 +707,23 @@
 
           <div class="done__actions">
             <button type="button" class="btn btn--ghost-dark btn--block" id="copyOrderBtn">주문 내역 복사</button>
-            <button type="button" class="btn btn--ghost-dark btn--block" id="restartBtn" style="border-color:transparent; background:#f7efe5">새로 주문하기</button>
+            <button type="button" class="btn btn--ghost-dark btn--block" id="restartBtn" style="border-color:transparent; background:#f6eee4">새로 주문하기</button>
           </div>
         </div>
       </section>
     </div>
   </section>
 
-  <section class="section section--tight" aria-labelledby="how-title">
+  <section class="section" id="faq" aria-labelledby="how-title">
     <div class="wrap">
-      <p class="eyebrow">How it works</p>
-      <h2 id="how-title">주문은 이렇게 진행됩니다</h2>
+      <div class="section-head">
+        <p class="eyebrow">How it works</p>
+        <h2 id="how-title">주문은 이렇게 진행됩니다</h2>
+      </div>
       <div class="steps">
         <div class="step"><b>STEP 1</b><h3>상품 담고 주문서 작성</h3><p>수량을 고르고 받는 분 정보를 적어 주문합니다.</p></div>
-        <div class="step"><b>STEP 2</b><h3>안내된 계좌로 입금</h3><p>입금자명을 주문서와 같게 넣어 주세요. 확인이 빠릅니다.</p></div>
-        <div class="step"><b>STEP 3</b><h3>수확·선별 후 출고</h3><p>입금 확인 후 그날 수확해 로젠택배로 보내드립니다.</p></div>
+        <div class="step"><b>STEP 2</b><h3>주문 내역 문자로 보내기</h3><p>‘주문 내역 복사’를 눌러 010-2696-1326으로 보내주세요. 접수 확인을 문자로 답해 드립니다.</p></div>
+        <div class="step"><b>STEP 3</b><h3>입금 확인 후 수확·출고</h3><p>안내드린 계좌로 입금해 주시면 그날 수확해 로젠택배로 보내드립니다.</p></div>
       </div>
 
       <div class="faq">
@@ -636,31 +751,44 @@
     </div>
   </section>
 
-  <section class="section section--tight" aria-labelledby="gallery-title">
+  <section class="section section--alt" aria-labelledby="gallery-title">
     <div class="wrap">
-      <p class="eyebrow">Farm</p>
-      <h2 id="gallery-title">효돈농원의 귤</h2>
+      <div class="section-head">
+        <p class="eyebrow">Farm</p>
+        <h2 id="gallery-title">효돈농원의 귤</h2>
+      </div>
       <div class="gallery">
         <figure>
-          <img src="assets/tangerine.jpg" alt="수확한 제주 노지감귤과 잘린 귤 단면" loading="lazy" width="1400" height="933">
+          <img src="assets/tangerine.jpg" alt="수확한 제주 노지감귤과 잘린 귤 단면" loading="lazy" width="1400" height="933" decoding="async">
           <figcaption>노지감귤 · 10kg</figcaption>
         </figure>
         <figure>
-          <img src="assets/golden.jpg" alt="선물 상자에 담긴 황금향" loading="lazy" width="1400" height="1120">
+          <img src="assets/golden.jpg" alt="선물 상자에 담긴 황금향" loading="lazy" width="1400" height="1120" decoding="async">
           <figcaption>황금향 · 5kg</figcaption>
         </figure>
       </div>
-      <p class="lead" style="margin-top:16px">제주특별자치도 서귀포시 칠십리로 636 (하효동 1233) · 효돈농원<br>사진은 상품 이해를 돕기 위한 이미지이며, 실제 수확 시기와 상태에 따라 모양·크기는 조금 다를 수 있습니다.</p>
+      <p class="farm-note"><b>제주특별자치도 서귀포시 칠십리로 636 (하효동 1233) · 효돈농원</b><br>사진은 상품 이해를 돕기 위한 이미지이며, 실제 수확 시기와 상태에 따라 모양·크기는 조금 다를 수 있습니다.</p>
     </div>
   </section>
 </main>
 
 <footer>
-  <div class="wrap">
-    <strong>효돈농원</strong>
-    <span>제주특별자치도 서귀포시 칠십리로 636 (하효동 1233)</span>
-    <span>문의·주문 <a href="tel:01026961326">010-2696-1326</a></span>
-    <span>택배 로젠택배 · 전 상품 무료배송(택배비 포함)</span>
+  <div class="wrap footer__grid">
+    <div class="footer__brand">
+      <strong>효돈농원</strong>
+      <p>제주 서귀포 하효동에서 노지감귤과 황금향을 기릅니다. 주문하신 순서대로 그날 수확해 보내드립니다.</p>
+    </div>
+    <div class="footer__contact">
+      <h3>연락·주문</h3>
+      <a href="tel:01026961326">010-2696-1326</a>
+      <p>전화·문자 모두 이 번호로 받습니다.</p>
+    </div>
+    <div>
+      <h3>배송 안내</h3>
+      <p>로젠택배 · 전 상품 무료배송(택배비 포함)</p>
+      <p>입금 확인 후 1~3일 내 출고</p>
+    </div>
+    <address class="footer__address">제주특별자치도 서귀포시 칠십리로 636 (하효동 1233)</address>
     <p class="fine">
       본 페이지는 효돈농원이 직접 운영하는 직거래 주문 페이지입니다.<br>
       주문 시 입력하신 개인정보는 주문 처리와 배송 목적으로만 사용하며, 처리 완료 후 정해진 기간 뒤 파기합니다.<br>
@@ -680,7 +808,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
 <script>
 /* =========================================================
    효돈농원 직거래 주문 페이지 — 설정 영역
@@ -771,7 +898,7 @@ const CONFIG = {
     const list = $("#productList");
     list.innerHTML = CONFIG.PRODUCTS.map((p) => `
       <li class="product" data-id="${p.id}">
-        <div class="product__thumb"><img src="${p.image}" alt="${p.name}" loading="lazy" width="192" height="192"></div>
+        <div class="product__thumb"><img src="${p.image}" alt="${p.name}" loading="lazy" width="640" height="400" decoding="async"></div>
         <div class="product__body">
           <span class="product__tag">${p.tag} · ${p.weight}</span>
           <h3 class="product__name">${p.name}</h3>
