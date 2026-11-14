@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>효돈농원 | 주문·배송 조회</title>
+<meta name="description" content="효돈농원 주문 배송 조회 — 전화번호로 내 주문과 송장번호를 확인하세요.">
+<style>
+  :root{
+    --ink:#241a12; --muted:#6f6154; --line:#e9ddcd; --line-strong:#d9c6ae;
+    --page:#fdf8f1; --surface:#fffdfa; --surface-alt:#f8efe3;
+    --orange:#d9551f; --orange-dark:#b8430f; --orange-soft:#fdefe4;
+    --green:#3c6644; --green-soft:#edf3ea; --red:#a83a2a; --red-soft:#fbe9e4;
+    --radius:16px;
+    --serif:"Gowun Batang","Nanum Myeongjo","Noto Serif KR",serif;
+    --sans:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; font-family:var(--sans); color:var(--ink); background:var(--page); line-height:1.6}
+  a{color:inherit}
+  .wrap{max-width:760px; margin:0 auto; padding:0 16px}
+  header{background:#2a2018; color:#fdf6ec; padding:22px 0 18px}
+  header h1{font-family:var(--serif); font-size:22px; margin:0}
+  header p{margin:4px 0 0; font-size:13.5px; color:#cfbca9}
+  header .btn{margin-top:12px}
+  main{padding:20px 0 60px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px}
+  .card h2{font-family:var(--serif); font-size:18px; margin:0 0 6px}
+  .card p{margin:0; font-size:14px; color:var(--muted)}
+  label{display:block; font-size:13.5px; font-weight:700; margin-bottom:6px}
+  input[type="tel"]{width:100%; padding:12px 14px; border:1px solid var(--line-strong); border-radius:10px; font:inherit; font-size:16px; background:#fff}
+  input:focus{outline:0; border-color:var(--orange); box-shadow:0 0 0 4px rgba(217,85,31,.14)}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
+  .row .grow{flex:1; min-width:200px}
+  .btn{display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 20px; border-radius:999px; border:1px solid transparent; font:inherit; font-weight:700; font-size:15px; cursor:pointer; text-decoration:none; background:var(--orange); color:#fff}
+  .btn:hover{background:var(--orange-dark)}
+  .btn--ghost{background:#fff; color:var(--ink); border-color:var(--line-strong)}
+  .btn--ghost:hover{border-color:var(--orange); color:var(--orange-dark)}
+  .btn--green{background:var(--green); color:#fff}
+  .btn--green:hover{background:#2e5236}
+  .btn--small{min-height:38px; padding:0 14px; font-size:14px}
+  .btn--block{flex:1}
+  .status{font-size:14px; color:var(--muted); min-height:22px}
+  .status--error{color:var(--red)}
+  .status--ok{color:var(--green)}
+  .order{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:12px}
+  .order__head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:baseline}
+  .order__head h3{margin:0; font-size:16.5px}
+  .order__head time{font-size:13px; color:var(--muted); white-space:nowrap}
+  .order__amount{font-size:18px; font-weight:800}
+  .steps{list-style:none; margin:14px 0 0; padding:0; display:flex; gap:0}
+  .steps li{flex:1; text-align:center; font-size:13px; color:var(--muted); position:relative; padding-top:22px}
+  .steps li::before{content:""; position:absolute; top:6px; left:50%; transform:translateX(-50%); width:12px; height:12px; border-radius:50%; background:#ddd0bd; border:2px solid #fff; box-shadow:0 0 0 1px #ddd0bd}
+  .steps li::after{content:""; position:absolute; top:11px; left:calc(-50% + 8px); right:calc(50% + 8px); height:2px; background:#e9ddcd}
+  .steps li:first-child::after{display:none}
+  .steps li.done{color:var(--ink); font-weight:700}
+  .steps li.done::before{background:var(--green); box-shadow:0 0 0 1px var(--green)}
+  .steps li.done::after{background:var(--green)}
+  .steps li.now{color:var(--orange-dark); font-weight:700}
+  .steps li.now::before{background:var(--orange); box-shadow:0 0 0 1px var(--orange)}
+  .trackbox{margin-top:14px; background:var(--surface-alt); border:1px solid var(--line-strong); border-radius:12px; padding:12px 14px}
+  .trackbox .trackno{font-size:22px; font-weight:800; letter-spacing:2px}
+  .trackbox .row{margin-top:10px}
+  .empty{text-align:center; color:var(--muted); padding:28px 0}
+  footer{border-top:1px solid var(--line); padding:20px 0 40px; font-size:13px; color:var(--muted)}
+  footer a{color:#cbb694}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>효돈농원 배송 조회</h1>
+    <p>주문할 때 입력한 전화번호로 내 주문과 송장번호를 확인하세요.</p>
+    <a class="btn btn--ghost" href="./">← 홈페이지로 돌아가기</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card">
+    <h2>전화번호로 조회</h2>
+    <p>주문자 또는 받는분의 전화번호를 입력하세요. 본인 주문만 보여집니다.</p>
+    <div class="row" style="margin-top:12px">
+      <div class="grow">
+        <label for="phoneInput">전화번호</label>
+        <input type="tel" id="phoneInput" placeholder="010-1234-5678" autocomplete="tel" inputmode="tel">
+      </div>
+      <button class="btn" type="button" id="searchBtn" style="flex:1">조회하기</button>
+    </div>
+    <p class="status" id="trackStatus"></p>
+  </section>
+
+  <div id="resultList"></div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>효돈농원 · 제주특별자치도 서귀포시 칠십리로 636 (하효동 1233) · 문의 <a href="tel:01026961326">010-2696-1326</a><br>
+    배송 조회는 로젠택배 공식 페이지에서 송장번호로 확인할 수 있습니다. 송장번호가 아직 없으면 출고 전입니다.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  // 주문 접수용 공개 웹앱 주소 (배포 1). track 액션은 이 주소로 조회합니다.
+  var TRACK_URL = "https://script.google.com/macros/s/AKfycbxoWPPAUPprFSnioTmBBokCg-KrnQx6jk6GtEmy3-l1LEKATDIXsVR2c9zHClenGvqw/exec";
+  var LOGEN_TRACE_URL = "https://www.ilogen.com/m/personal/trace";
+  var $ = function (s) { return document.querySelector(s); };
+  var phoneInput = $("#phoneInput");
+  var statusEl = $("#trackStatus");
+  var resultList = $("#resultList");
+
+  function won(n) { return Number(n || 0).toLocaleString("ko-KR") + "원"; }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function digits(s) { return String(s || "").replace(/[^0-9]/g, ""); }
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg || "";
+    statusEl.classList.toggle("status--error", !!isError);
+    statusEl.classList.toggle("status--ok", !isError && !!msg);
+  }
+
+  function render(orders) {
+    if (!orders.length) {
+      resultList.innerHTML = '<p class="empty">해당 전화번호로 주문을 찾을 수 없습니다.<br>주문할 때 입력한 번호가 맞는지 확인해 주세요.<br>그래도 안 되면 농원(010-2696-1326)으로 연락 주세요.</p>';
+      return;
+    }
+    resultList.innerHTML = orders.map(function (o) {
+      var step2 = o.paid ? "done" : "now";
+      var step3 = (o.tracking || "").trim() ? "done" : "";
+      var step3Text = (o.tracking || "").trim() ? "출고됨" : "출고 전";
+      var track = "";
+      if ((o.tracking || "").trim()) {
+        track = '<div class="trackbox">' +
+          '<div>송장번호 (로젠택배)</div>' +
+          '<div class="trackno">' + esc(o.tracking) + '</div>' +
+          '<div class="row">' +
+            '<a class="btn btn--green btn--small" href="' + LOGEN_TRACE_URL + '" target="_blank" rel="noopener">로젠택배에서 배송 조회</a>' +
+            '<button type="button" class="btn btn--ghost btn--small js-copy-track" data-tracking="' + esc(o.tracking) + '">송장번호 복사</button>' +
+          '</div>' +
+          '<p style="margin:8px 0 0; font-size:13px">로젠택배 페이지에서 송장번호를 입력하면 실시간 배송 현황을 볼 수 있어요. 집하 후 수 시간이 지나야 조회가 됩니다.</p>' +
+        '</div>';
+      } else {
+        track = '<div class="trackbox"><p style="margin:0">아직 출고 전이에요. 농원에서 입금 확인 후 출고하면 송장번호가 여기에 표시됩니다.</p></div>';
+      }
+      return '' +
+        '<article class="order">' +
+          '<div class="order__head"><h3>' + esc(o.receiver || "") + ' — ' + esc(o.product || "") + '</h3><time>' + esc(o.datetime || "") + '</time></div>' +
+          '<div style="margin-top:8px">' + esc(o.qty) + '박스 · <span class="order__amount">' + won(o.amount) + '</span></div>' +
+          '<ol class="steps">' +
+            '<li class="done">주문접수</li>' +
+            '<li class="' + step2 + '">' + (o.paid ? "입금 확인됨" : "입금 대기") + '</li>' +
+            '<li class="' + step3 + '">' + step3Text + '</li>' +
+          '</ol>' +
+          track +
+        '</article>';
+    }).join("");
+  }
+
+  function search() {
+    var phone = digits(phoneInput.value);
+    if (phone.length < 10 || phone.length > 11) {
+      setStatus("전화번호를 정확히 입력하세요. (010-1234-5678 형태)", true);
+      return;
+    }
+    setStatus("조회하는 중입니다…");
+    fetch(TRACK_URL + "?action=track&phone=" + encodeURIComponent(phone))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || !data.ok) throw new Error((data && data.error) || "조회에 실패했습니다.");
+        var orders = data.orders || [];
+        render(orders);
+        setStatus(orders.length ? "주문 " + orders.length + "건을 찾았습니다." : "");
+      })
+      .catch(function (err) {
+        setStatus("조회 실패: " + err.message + " 잠시 후 다시 시도해 주세요.", true);
+      });
+  }
+
+  function copyText(text, okMsg) {
+    function done() { setStatus(okMsg); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+    } else { fallbackCopy(text); done(); }
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  $("#searchBtn").addEventListener("click", search);
+  phoneInput.addEventListener("keydown", function (e) { if (e.key === "Enter") search(); });
+  resultList.addEventListener("click", function (e) {
+    var t = e.target;
+    if (t && t.classList.contains("js-copy-track")) {
+      copyText(t.getAttribute("data-tracking") || "", "송장번호를 복사했습니다.");
+    }
+  });
+
+  // ?phone=010-... 로 들어오면 바로 조회
+  var params = new URLSearchParams(window.location.search);
+  var preset = params.get("phone");
+  if (preset) {
+    phoneInput.value = preset;
+    search();
+  }
+})();
+</script>
+</body>
+</html>
