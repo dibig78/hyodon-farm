@@ -257,13 +257,22 @@
   .stepper button[disabled]{opacity:.35; cursor:default; box-shadow:none}
   .stepper output{min-width:34px; text-align:center; font-weight:800; font-size:15.5px; font-variant-numeric:tabular-nums}
   @media (min-width:768px){
-    .products{grid-template-columns:1fr 1fr; gap:var(--s5); margin-top:var(--s6)}
+    .products{grid-template-columns:1fr 1fr; gap:var(--s4); margin-top:var(--s6)}
     .product{grid-template-columns:1fr; padding:0; overflow:hidden; gap:0; align-content:start}
-    .product__thumb{width:100%; height:auto; aspect-ratio:16/10; border-radius:0}
-    .product__body{padding:var(--s4) var(--s5) var(--s5)}
-    .product__name{font-size:18.5px}
-    .product__desc{font-size:14px; -webkit-line-clamp:2; min-height:2.9em}
-    .product__foot{justify-content:space-between; padding-top:var(--s4)}
+    .product__thumb{width:100%; height:auto; aspect-ratio:4/3; max-height:230px; border-radius:0}
+    .product__body{padding:var(--s4) var(--s4) var(--s5)}
+    .product__name{font-size:18px}
+    .product__desc{font-size:13.8px; -webkit-line-clamp:2; min-height:2.9em}
+    .product__foot{justify-content:space-between; padding-top:var(--s3); gap:var(--s2)}
+  }
+  @media (min-width:1140px){
+    .products{grid-template-columns:repeat(4,1fr)}
+    .product__body{padding:var(--s4)}
+    .product__name{font-size:16.5px}
+    .product__price{font-size:17.5px}
+    .product__price small{display:block; margin-left:0}
+    .stepper button{width:40px; height:40px; font-size:18px}
+    .stepper output{min-width:26px}
   }
 
   /* ---------- cart summary ---------- */
@@ -277,6 +286,8 @@
   .cartbar__total{font-size:26px; font-weight:800; letter-spacing:-.03em; line-height:1.25; font-variant-numeric:tabular-nums}
   .cartbar__empty{font-size:13.5px; color:#b7a493}
   .cartbar .btn{margin-top:var(--s3)}
+  .cartbar .btn[aria-disabled="true"]{background:#4a3a2b; color:#cbb9a6; box-shadow:none; cursor:not-allowed}
+  .cartbar .btn[aria-disabled="true"]:hover{background:#4a3a2b}
   @media (min-width:768px){
     .cartbar{display:flex; align-items:center; justify-content:space-between; gap:var(--s5); padding:var(--s4) var(--s5)}
     .cartbar .btn{margin-top:0; min-width:220px}
@@ -516,13 +527,6 @@
     </ul>
   </div>
 
-  <div class="wrap">
-    <div class="notice" id="setupNotice" hidden>
-      <span aria-hidden="true">📮</span>
-      <span><strong>지금은 주문서를 문자로 접수하고 있습니다.</strong> 주문 후 <strong>‘주문 내역 복사’</strong>를 눌러 <a href="tel:01026961326">010-2696-1326</a>으로 보내주시면 확인 후 출고됩니다.</span>
-    </div>
-  </div>
-
   <section class="section section--alt" aria-labelledby="why-title">
     <div class="wrap">
       <div class="section-head">
@@ -566,7 +570,7 @@
           <span class="cartbar__total" id="cartTotalText" aria-live="polite">0원</span>
           <span class="cartbar__empty" id="cartEmptyText">아직 선택한 상품이 없습니다</span>
         </div>
-        <a class="btn btn--primary" id="goOrderBtn" href="#order" aria-disabled="true" style="opacity:.55">주문서 작성하기</a>
+        <a class="btn btn--primary" id="goOrderBtn" href="#order" aria-disabled="true">주문서 작성하기</a>
       </div>
     </div>
   </section>
@@ -577,6 +581,11 @@
         <p class="eyebrow">Order</p>
         <h2 id="order-title">주문서 작성</h2>
         <p class="lead">아래 내용을 확인하고 주문해 주세요. 입금이 확인되면 순서대로 출고합니다.</p>
+      </div>
+
+      <div class="notice" id="setupNotice" hidden>
+        <span aria-hidden="true">📮</span>
+        <span><strong>지금은 주문서를 문자로 접수하고 있습니다.</strong> 주문 후 <strong>‘주문 내역 복사’</strong>를 눌러 <a href="tel:01026961326">010-2696-1326</a>으로 보내주시면 확인 후 출고됩니다.</span>
       </div>
 
       <div id="orderFormWrap">
@@ -957,7 +966,6 @@ const CONFIG = {
     $("#cartEmptyText").hidden = t.qty > 0;
     $("#cartEmptyText").textContent = "아직 선택한 상품이 없습니다";
     $("#goOrderBtn").setAttribute("aria-disabled", t.qty === 0 ? "true" : "false");
-    $("#goOrderBtn").style.opacity = t.qty === 0 ? ".55" : "1";
 
     // 주문서 요약
     const linesEl = $("#formSummaryLines");
