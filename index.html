@@ -29,22 +29,28 @@
 <link rel="apple-touch-startup-image" href="./launch/launch-640x1136.png" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
 <link rel="manifest" href="./manifest.webmanifest">
 <!-- Gowun Batang is vendored locally via @fontsource (imported in main-index.tsx); no Google Fonts link needed. -->
+<!-- 정적 런치 스플래시: JS가 뜨기 전 첫 페인트부터 오렌지 + 아이콘을 보여줘서
+     네이티브 시작 이미지와 React 스플래시 사이의 흰 깜빡임을 없앤다.
+     standalone(홈 화면 앱)일 때만 표시된다. (인라인이라 테마 토큰 대신 직접 값을 쓴다.) -->
+<style>#hyodon-launch-splash-static{display:none}html.is-standalone #hyodon-launch-splash-static{z-index:9999;background:#d9551f;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}html.is-standalone #hyodon-launch-splash-static img{object-fit:cover;border-radius:10px;width:144px;height:144px}</style>
+<script>(function(){try{if(window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone){document.documentElement.classList.add('is-standalone')}}catch(e){}})();</script>
 <link rel="preload" as="image" href="assets/hero.jpg">
-  <script type="module" crossorigin src="./assets/main-CM_hEFL6.js"></script>
+  <script type="module" crossorigin src="./assets/main-D9_VD29u.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/focusOutline.stylex-Br3Fytdz.js">
   <link rel="modulepreload" crossorigin href="./assets/useLayerDismissal-DsMGTbXZ.js">
-  <link rel="modulepreload" crossorigin href="./assets/config-Dzbcq1eL.js">
-  <link rel="modulepreload" crossorigin href="./assets/api-DZFF-z3E.js">
-  <link rel="modulepreload" crossorigin href="./assets/HStack-Ds1dydmZ.js">
+  <link rel="modulepreload" crossorigin href="./assets/config-B6ygPpMz.js">
+  <link rel="modulepreload" crossorigin href="./assets/api-D13kQ58F.js">
+  <link rel="modulepreload" crossorigin href="./assets/HStack-Daj-5F4y.js">
   <link rel="modulepreload" crossorigin href="./assets/rtlStyles-CVVETNV7.js">
-  <link rel="modulepreload" crossorigin href="./assets/products-BW98DEjx.js">
-  <link rel="modulepreload" crossorigin href="./assets/TextArea-Cwcq2Si8.js">
-  <link rel="modulepreload" crossorigin href="./assets/resolveSnapPoint-DL3BGoxd.js">
-  <link rel="modulepreload" crossorigin href="./assets/IconButton-B-OSG85J.js">
-  <link rel="modulepreload" crossorigin href="./assets/LaunchSplash-v9YvCCpT.js">
-  <link rel="stylesheet" crossorigin href="./assets/config-BcAKi4ex.css">
+  <link rel="modulepreload" crossorigin href="./assets/products-bKywBkgE.js">
+  <link rel="modulepreload" crossorigin href="./assets/TextArea-Dm1yiIya.js">
+  <link rel="modulepreload" crossorigin href="./assets/resolveSnapPoint-C8V7lPoE.js">
+  <link rel="modulepreload" crossorigin href="./assets/IconButton-Cftt_VPH.js">
+  <link rel="modulepreload" crossorigin href="./assets/LaunchSplash-BI2r-Y84.js">
+  <link rel="stylesheet" crossorigin href="./assets/config-CrzrcMwD.css">
 </head>
 <body>
+<div id="hyodon-launch-splash-static" aria-hidden="true"><img src="./icon-512.png" alt=""></div>
 <div id="root"></div>
 <script type="application/ld+json">
 {
