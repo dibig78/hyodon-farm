@@ -2794,6 +2794,7 @@ function retryPromo(data) {
       }
       sheet.getRange(row, 4).setValue('대기');
       sheet.getRange(row, 5).setValue('');
+      sheet.getRange(row, 6).setValue('');
       sheet.getRange(row, 7).setValue('');
       return respond({ ok: true, row: row });
     } finally {
