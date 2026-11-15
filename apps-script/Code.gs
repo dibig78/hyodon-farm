@@ -230,15 +230,6 @@ function doPost(e) {
       return respond({ ok: false, error: '받는 분 연락처를 정확히 입력해 주세요.' });
     }
 
-    // 전화번호 인증이 켜져 있으면 주문자 전화 인증 토큰이 필요합니다.
-    // 토큰은 1회용이라 유효하면 여기서 사용여부를 TRUE로 표시하고 계속합니다.
-    // 꺼져 있으면 검사 없이 그대로 진행합니다.
-    if (isPhoneVerifyEnabled_()) {
-      if (!consumePhoneVerifyToken_(normalizeMobileDigits_(data.ordererPhone), String(data.phoneToken || ''))) {
-        return respond({ ok: false, error: '전화번호 인증이 필요합니다. 인증번호를 받아 확인해 주세요.' });
-      }
-    }
-
     // 주문 내역 검증 — 상품 id가 있고 수량이 양의 정수인지, totalQty가
     // 항목 수량 합계와 일치하는지 확인합니다. totalAmount는 쉼표를 제거해
     // 숫자로 파싱하고 숫자가 아니면 주문을 거부합니다.
@@ -271,6 +262,17 @@ function doPost(e) {
     var repricedItems = repriceOrder_(data);
     if (!repricedItems) {
       return respond({ ok: false, error: '상품 정보를 확인해 주세요. (노출 중단된 상품이거나 수량이 올바르지 않습니다.)' });
+    }
+
+    // 전화번호 인증이 켜져 있으면 주문자 전화 인증 토큰이 필요합니다.
+    // 토큰은 1회용입니다. 전 검증을 통과한 뒤에야 사용여부를 TRUE로
+    // 표시합니다 — 상품 검증·가격 재계산이 실패하면 토큰을 보존해
+    // 손님이 다시 인증하지 않고 고친 주문을 다시 보낼 수 있게 합니다.
+    // (N-E-P1-5 수정, 2026-11-15) 꺼져 있으면 검사 없이 그대로 진행합니다.
+    if (isPhoneVerifyEnabled_()) {
+      if (!consumePhoneVerifyToken_(normalizeMobileDigits_(data.ordererPhone), String(data.phoneToken || ''))) {
+        return respond({ ok: false, error: '전화번호 인증이 필요합니다. 인증번호를 받아 확인해 주세요.' });
+      }
     }
 
     var sheet = getSheet();
@@ -2069,6 +2071,9 @@ function notifyNewOrder_(data, productText) {
     var notifyPhone = getNotifyPhone_();
     var ok = false;
     try { ok = sendSmsViaSmsGate_(notifyPhone, message); } catch (e) { ok = false; }
+    // 발송이 실패하면 재시도 큐에 넣어 15분 트리거가 다시 보냅니다.
+    // (E-P1-5 수정, 2026-11-15 — 실패해도 주문 접수는 그대로 성공)
+    if (!ok) enqueueSmsRetry_('주문알림', notifyPhone, message);
     // 주문 알림도 '문자발송기록' 탭에 남깁니다 (구분 '주문알림').
     // 기록 쓰기가 실패해도 주문 접수와 문자 발송 결과에는 영향이 없습니다.
     try {
@@ -2115,6 +2120,9 @@ function notifyCustomer_(phone, message) {
     if (!phone || !message) return false;
     var ok = false;
     try { ok = sendSmsViaSmsGate_(phone, message); } catch (e) { ok = false; }
+    // 발송이 실패하면 재시도 큐에 넣어 15분 트리거가 다시 보냅니다.
+    // (E-P1-5 수정, 2026-11-15)
+    if (!ok) enqueueSmsRetry_('고객알림', phone, message);
     // 고객 알림도 '문자발송기록' 탭에 남깁니다 (구분 '고객알림').
     // 기록 쓰기가 실패해도 주문 접수·관리자 업데이트와 문자 발송 결과에는
     // 영향이 없습니다.
@@ -2289,8 +2297,24 @@ function getSetting_(key) {
   return '';
 }
 
-/** '설정' 탭에 key/value를 저장합니다. 있으면 덮어쓰고 없으면 추가합니다. */
+/** '설정' 탭에 key/value를 저장합니다. 있으면 덮어쓰고 없으면 추가합니다.
+ *  락 안에서 읽고 씁니다 — 동시에 두 관리자가 설정을 바꿔도 한쪽 쓰기가
+ *  사라지지 않게 합니다. (E-P1-3 수정, 2026-11-15)
+ *  주의: 락을 이미 잡은 곳에서는 setSettingLocked_를 쓰세요.
+ *  같은 실행에서 락을 두 번 잡으면 20초를 기다리다 실패합니다. */
 function setSetting_(key, value) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    setSettingLocked_(key, value);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** setSetting_의 본체 — 호출자가 락을 이미 잡았을 때만 씁니다.
+ *  (setBankInfo가 은행·계좌·예금주 3개를 한 번의 락으로 원자적으로 저장) */
+function setSettingLocked_(key, value) {
   var sheet = getSettingsSheet_(true);
   var lastRow = sheet.getLastRow();
   if (lastRow >= 2) {
@@ -2379,9 +2403,17 @@ function setBankInfo(data) {
       return respond({ ok: false, error: '계좌번호는 숫자와 하이픈(-)만 입력하세요.' });
     }
     if (!holder) return respond({ ok: false, error: '예금주를 입력하세요.' });
-    setSetting_('BANK_NAME', bank);
-    setSetting_('BANK_ACCOUNT', account);
-    setSetting_('BANK_HOLDER', holder);
+    // 은행·계좌·예금주는 한 번의 락으로 함께 저장합니다 — 셋 중 일부만
+    // 바뀌는 부분 저장이 없게 합니다. (E-P1-3 수정, 2026-11-15)
+    var bankLock = LockService.getScriptLock();
+    bankLock.waitLock(20000);
+    try {
+      setSettingLocked_('BANK_NAME', bank);
+      setSettingLocked_('BANK_ACCOUNT', account);
+      setSettingLocked_('BANK_HOLDER', holder);
+    } finally {
+      bankLock.releaseLock();
+    }
     return respond({ ok: true, bank: bank, account: account, holder: holder });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
@@ -2715,7 +2747,7 @@ function countRecentInquiriesByPhone_(sheet, phone, now) {
     var created = parseStamp_(rows[i][0]);
     if (!created) continue;
     if (now.getTime() - created.getTime() > 3600000) continue;
-    if (String(rows[i][2] || '').replace(/[^0-9]/g, '') === phone) count++;
+    if (normalizeMobileDigits_(String(rows[i][2] || '')) === phone) count++;
   }
   return count;
 }
@@ -2738,6 +2770,9 @@ function notifyNewInquiry_(name, phone, message) {
     var notifyPhone = getNotifyPhone_();
     var ok = false;
     try { ok = sendSmsViaSmsGate_(notifyPhone, text); } catch (e) { ok = false; }
+    // 발송이 실패하면 재시도 큐에 넣어 15분 트리거가 다시 보냅니다.
+    // (E-P1-5 수정, 2026-11-15 — 실패해도 문의 접수는 그대로 성공)
+    if (!ok) enqueueSmsRetry_('문의알림', notifyPhone, text);
     try {
       var logSheet = getSmsLogSheet_();
       logPromoSend_(logSheet, '문의알림', text, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [notifyPhone]);
@@ -2783,8 +2818,11 @@ function submitInquiry(data) {
         return respond({ ok: false, error: '문의는 시간당 3건까지만 접수할 수 있습니다. 잠시 후 다시 남겨주세요.' });
       }
       var targetRow = sheet.getLastRow() + 1;
-      sheet.getRange(targetRow, 3, 1, 2).setNumberFormat('@');
-      sheet.appendRow([stamp, safe(name), phone, safe(message), '', '', '대기']);
+      // 전화번호 앞자리 0 보존: '@' 서식을 지정한 뒤 setValues로 씁니다.
+      // appendRow는 서식을 무시하고 숫자로 저장해 0이 사라집니다
+      // (전화번호 인증 때 같은 문제로 수정한 방식과 동일, 2026-11-15).
+      sheet.getRange(targetRow, 1, 1, INQUIRY_HEADERS.length).setNumberFormat('@');
+      sheet.getRange(targetRow, 1, 1, INQUIRY_HEADERS.length).setValues([[stamp, safe(name), phone, safe(message), '', '', '대기']]);
     } finally {
       lock.releaseLock();
     }
@@ -2858,7 +2896,7 @@ function replyInquiry(data) {
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
-      phone = String(sheet.getRange(row, 3).getDisplayValue() || '').replace(/[^0-9]/g, '');
+      phone = normalizeMobileDigits_(String(sheet.getRange(row, 3).getDisplayValue() || ''));
       if (!isValidMobileDigits_(phone)) {
         return respond({ ok: false, error: '문의하신 분의 연락처가 올바르지 않습니다.' });
       }
@@ -3276,7 +3314,114 @@ function sendPromoTest(data) {
  * '발송중'으로 남아 15분 뒤 다시 보내져 고객이 중복 수신합니다).
  * 동시에 두 번 실행되지 않게 ①~③ 구간만 짧게 잠급니다.
  */
+/* ============================================================
+ *  SMS 재시도 큐 (E-P1-5, 2026-11-15) — 주문·손님·문의 알림 전용
+ *  - 발송 요청 자체가 실패하면(네트워크 오류·게이트웨이 거부)
+ *    '문자재시도큐' 탭에 넣어두고, 홍보 큐와 같은 15분 트리거가
+ *    최대 3번까지 다시 보냅니다. 3번 다 실패하면 상태 '실패'로 남깁니다.
+ *  - 홍보 하루 한도와는 무관합니다 (구분 '주문알림'·'고객알림'·'문의알림').
+ *  - 게이트웨이가 요청을 받아들인 뒤 단말이 오프라인이라 대시보드에
+ *    'Pending'으로 뜨는 경우는 재시도 대상이 아닙니다 — 클라우드가
+ *    단말이 온라인이 되면 알아서 보내줍니다. 이 큐는 요청 자체가
+ *    실패한 경우만 다룹니다.
+ *  - 시도 횟수는 발송을 고르기 전에 미리 올립니다. 처리 중 멈추면
+ *    행이 '대기'로 남아 다음 실행에서 다시 시도됩니다 (중복 발송보다
+ *    누락 방지를 우선합니다).
+ * ============================================================ */
+var SMS_RETRY_SHEET_NAME = '문자재시도큐';
+var SMS_RETRY_HEADERS = ['생성일시', '구분', '전화번호', '문구', '시도횟수', '상태'];
+var SMS_RETRY_MAX_ATTEMPTS = 3;
+var SMS_RETRY_BATCH_SIZE = 10;
+
+/** '문자재시도큐' 탭을 가져옵니다. create가 true면 없으면 헤더와 함께 만듭니다. */
+function getSmsRetryQueueSheet_(create) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(SMS_RETRY_SHEET_NAME);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(SMS_RETRY_SHEET_NAME);
+    sheet.getRange(1, 1, 1, SMS_RETRY_HEADERS.length).setValues([SMS_RETRY_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/**
+ * 발송 실패한 알림을 재시도 큐에 넣습니다. 절대 throw하지 않습니다.
+ * appendRow로 넣습니다 (락을 안 잡아도 동시 호출에 안전합니다).
+ * 전화번호는 처리할 때 normalizeMobileDigits_로 다시 정규화하므로
+ * 저장될 때 앞자리 0이 빠져도 문제없습니다.
+ */
+function enqueueSmsRetry_(kind, phone, message) {
+  try {
+    if (!kind || !phone || !message) return;
+    var sheet = getSmsRetryQueueSheet_(true);
+    var stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    sheet.appendRow([stamp, kind, normalizeMobileDigits_(phone), message, 0, '대기']);
+  } catch (err) {
+    Logger.log('enqueueSmsRetry_ failed: ' + err);
+  }
+}
+
+/**
+ * 재시도 큐를 처리합니다. processPromoQueue_ 맨 앞에서 호출합니다.
+ * '대기' 행을 한 번에 최대 10건까지, 시도 횟수가 3번 미만인 것만
+ * 골라 보냅니다. 결과는 '문자발송기록' 탭에 원래 구분으로 남깁니다.
+ */
+function processSmsRetryQueue_() {
+  var sheet = getSmsRetryQueueSheet_(false);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  var logSheet = getSmsLogSheet_();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    Logger.log('processSmsRetryQueue_: 다른 실행이 진행 중이라 이번에는 건너뜁니다.');
+    return;
+  }
+  var batch = [];
+  try {
+    var lastRow = sheet.getLastRow();
+    var rows = sheet.getRange(2, 1, lastRow - 1, SMS_RETRY_HEADERS.length).getDisplayValues();
+    for (var i = 0; i < rows.length && batch.length < SMS_RETRY_BATCH_SIZE; i++) {
+      if (String(rows[i][5] || '') !== '대기') continue;
+      var attempts = Number(rows[i][4] || 0) || 0;
+      if (attempts >= SMS_RETRY_MAX_ATTEMPTS) {
+        sheet.getRange(i + 2, 6).setValue('실패');
+        continue;
+      }
+      // 시도 횟수를 고르기 전에 미리 올립니다 — 처리 중 멈춰도
+      // 다음 실행에서 무한 반복하지 않습니다.
+      sheet.getRange(i + 2, 5).setValue(attempts + 1);
+      batch.push({
+        row: i + 2,
+        kind: String(rows[i][1] || ''),
+        phone: normalizeMobileDigits_(String(rows[i][2] || '')),
+        message: String(rows[i][3] || ''),
+        attempts: attempts + 1
+      });
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  for (var j = 0; j < batch.length; j++) {
+    var item = batch[j];
+    var ok = false;
+    try { ok = sendSmsViaSmsGate_(item.phone, item.message); } catch (e) { ok = false; }
+    try {
+      sheet.getRange(item.row, 6).setValue(ok ? '완료' : (item.attempts >= SMS_RETRY_MAX_ATTEMPTS ? '실패' : '대기'));
+    } catch (e2) {
+      Logger.log('processSmsRetryQueue_ status failed for row ' + item.row + ': ' + e2);
+    }
+    try {
+      logPromoSend_(logSheet, item.kind, item.message, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [item.phone]);
+    } catch (logErr) {
+      Logger.log('processSmsRetryQueue_ log failed for row ' + item.row + ': ' + logErr);
+    }
+  }
+}
+
 function processPromoQueue_() {
+  // SMS 재시도 큐도 같은 15분 트리거에서 함께 처리합니다 (E-P1-5).
+  // 재시도 처리기는 자기 락을 따로 잡으므로 홍보 큐 락과 겹치지 않습니다.
+  try { processSmsRetryQueue_(); } catch (e) { Logger.log('processSmsRetryQueue_ failed: ' + e); }
   var queueSheet = getPromoQueueSheet_();
   var logSheet = getSmsLogSheet_();
   var now = new Date();
