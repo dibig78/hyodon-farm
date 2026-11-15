@@ -1,5 +1,12 @@
 # 변경 내역 (효돈농원 직거래 주문 페이지)
 
+## 2026-11-15 — 런치 스플래시 더 부드럽게 (정적 스플래시 + 페이드 1200ms)
+
+- 사용자 요청 2차("좀 더 부드럽게 넘어 가자"): 끊기는 원인이 네이티브 시작 이미지와 React 스플래시 사이의 흰 빈 화면(React가 뜨기 전 `#root`가 비어 있음)이라, **HTML 안에 정적 스플래시**를 추가 — JS가 뜨기 전 첫 페인트부터 오렌지 + 중앙 아이콘이 보이고, React가 뜨면 모습이 똑같은 인앱 스플래시가 이어받음 (인라인 `<style>` + standalone 판별 스크립트, `index.html`·`directions.html`·`inquiry.html` 3곳; 일반 브라우저 탭에서는 `display:none`이라 안 보임; `LaunchSplash` 마운트 시 정적 요소를 제거함 — reduced-motion으로 즉시 숨길 때도 남지 않게).
+- 페이드아웃도 800ms → **1200ms ease-in-out**으로 더 늘림 (표시 900ms는 그대로, 전체 ~2.1초; 스플래시는 `pointer-events: none`이라 페이드 중에도 페이지 조작 가능).
+- 검증: 빌드 성공, doctor pass 20 / warn 2(기존) / fail 0, Playwright **22/22** (`verify_fade_softer2.js` — JS 차단 + standalone 스텁: 정적 스플래시 표시·오렌지·아이콘 144 중앙·전체 화면 / 일반 모드: 숨김 / React 마운트 후 정적 제거 / 페이드 실측: +300ms 0.87 · +600ms 0.48 · 아이콘 scale 0.98 · 페이드 후 언마운트·히어로 표시), 스크린샷 2장 직접 판독 (정적 스플래시 첫 화면·페이드 중 크로스페이드). 기존 전체 스플래시 검증 **46/46**도 재통과.
+- 라이브 확인: 완료 (커밋 29f1d98) — 라이브 index.html이 새 번들 `main-D9_VD29u.js`를 참조(로컬 dist 지문과 일치), 라이브 HTML 3곳에 정적 스플래시·is-standalone 스크립트 포함, 라이브 CSS에 `opacity 1.2s ease-in-out` 포함 확인.
+
 ## 2026-11-15 — 런치 스플래시 전환 부드럽게 (페이드 800ms ease-in-out)
 
 - 사용자 요청("조금 부드럽게 넘어갔으면 좋겠어"): 스플래시 페이드아웃을 400ms ease → 800ms ease-in-out으로 변경하고, 페이드 중 아이콘도 살짝 작아지며(1 → 0.96) 가라앉게 함 (`src/components/LaunchSplash.tsx` FADE_MS 400 → 800, `src/index.css` `.hyodon-launch-splash`·`__icon` 전환). 표시 시간 900ms는 그대로 (전체 ~1.7초).
