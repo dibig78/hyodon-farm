@@ -1,5 +1,11 @@
 # 변경 내역 (효돈농원 직거래 주문 페이지)
 
+## 2026-11-15 — 런치 스플래시 전환 부드럽게 (페이드 800ms ease-in-out)
+
+- 사용자 요청("조금 부드럽게 넘어갔으면 좋겠어"): 스플래시 페이드아웃을 400ms ease → 800ms ease-in-out으로 변경하고, 페이드 중 아이콘도 살짝 작아지며(1 → 0.96) 가라앉게 함 (`src/components/LaunchSplash.tsx` FADE_MS 400 → 800, `src/index.css` `.hyodon-launch-splash`·`__icon` 전환). 표시 시간 900ms는 그대로 (전체 ~1.7초).
+- 검증: 빌드 성공, doctor pass 20 / warn 2(기존) / fail 0, Playwright **7/7** (`docs/launch-splash-2026-11-15/verify_fade_softer.js` — 페이드 중 opacity 실측: +200ms 0.87 · +400ms 0.50 · 아이콘 scale 0.98, 페이드 후 언마운트·히어로 표시), 중간 페이드 스크린샷 직접 판독 (오렌지가 걷히며 홈페이지가 서서히 드러나고 중앙 아이콘이 남아 있는 크로스페이드 확인). 기존 전체 스플래시 검증 **46/46**도 재통과.
+- 라이브 확인: 완료 (커밋 b91b1eb) — 라이브 index.html이 새 번들 `main-CM_hEFL6.js`를 참조(로컬 dist 지문과 일치), 라이브 CSS에 `transition: opacity .8s ease-in-out` 포함 확인, LaunchSplash 청크 `LaunchSplash-v9YvCCpT.js` 확인.
+
 ## 2026-11-15 — 홈 화면 진입용 런치 스플래시 추가
 
 - 홈 화면 아이콘을 눌러 들어갈 때 오렌지 바탕 중앙에 효돈농원 아이콘이 뜬 뒤 홈페이지로 들어감. 두 겹으로 구성: ① iOS 네이티브 시작 이미지(`apple-touch-startup-image`, `public/launch/` 9종 — PIL 생성, 바탕 #d9551f, 중앙에 icon-512.png 너비 1/3) — 5개 HTML 페이지 전부 연결, ② 인앱 오버레이(`src/components/LaunchSplash.tsx`, `main-index`·`main-directions`·`main-inquiry`에만 마운트 — admin/track에는 없음): standalone 실행 시에만 900ms 표시 후 400ms 페이드아웃·언마운트, 일반 브라우저 탭에서는 안 뜸, `prefers-reduced-motion`이면 즉시 숨김, `pointer-events: none`이라 상호작용을 막지 않음.
