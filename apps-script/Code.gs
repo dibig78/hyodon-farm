@@ -176,6 +176,10 @@ function doPost(e) {
     if (data.action === 'getBankInfo') return getBankInfo(data);
     if (data.action === 'setBankInfo') return setBankInfo(data);
 
+    // 전화번호 인증 켜기/끄기 (admin.html 문자 보내기에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'getPhoneVerifyEnabled') return getPhoneVerifyEnabled(data);
+    if (data.action === 'setPhoneVerifyEnabled') return setPhoneVerifyEnabled(data);
+
     // 홍보 예약 편집·취소·다시 보내기 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
     if (data.action === 'updatePromo') return updatePromo(data);
     if (data.action === 'cancelPromo') return cancelPromo(data);
@@ -197,6 +201,10 @@ function doPost(e) {
     if (data.action === 'upsertProduct') return upsertProduct(data);
     if (data.action === 'setProductActive') return setProductActive(data);
 
+    // 전화번호 인증 (홈페이지 주문 폼에서 호출, 배포 1 공개 — 인증 없음)
+    if (data.action === 'requestPhoneCode') return requestPhoneCode(data);
+    if (data.action === 'verifyPhoneCode') return verifyPhoneCode(data);
+
     // 필수값 확인 (홈페이지에서도 검사하지만 마지막으로 한 번 더)
     var missing = [];
     if (!data.ordererName) missing.push('주문자');
@@ -214,6 +222,15 @@ function doPost(e) {
     }
     if (!isValidMobileDigits_(normalizeMobileDigits_(data.receiverPhone))) {
       return respond({ ok: false, error: '받는 분 연락처를 정확히 입력해 주세요.' });
+    }
+
+    // 전화번호 인증이 켜져 있으면 주문자 전화 인증 토큰이 필요합니다.
+    // 토큰은 1회용이라 유효하면 여기서 사용여부를 TRUE로 표시하고 계속합니다.
+    // 꺼져 있으면 검사 없이 그대로 진행합니다.
+    if (isPhoneVerifyEnabled_()) {
+      if (!consumePhoneVerifyToken_(normalizeMobileDigits_(data.ordererPhone), String(data.phoneToken || ''))) {
+        return respond({ ok: false, error: '전화번호 인증이 필요합니다. 인증번호를 받아 확인해 주세요.' });
+      }
     }
 
     // 주문 내역 검증 — 상품 id가 있고 수량이 양의 정수인지, totalQty가
@@ -326,6 +343,8 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'products') return productsGet();
   // 입금 계좌 조회 (index.html 결제 안내에서 ?action=bankInfo 로 호출, 키 없음)
   if (e && e.parameter && e.parameter.action === 'bankInfo') return bankInfoGet();
+  // 전화번호 인증 켜짐 여부 조회 (index.html 주문 폼에서 ?action=phoneVerifyStatus 로 호출, 키 없음)
+  if (e && e.parameter && e.parameter.action === 'phoneVerifyStatus') return phoneVerifyStatus();
   // 상품 전체 목록 조회 (admin.html 상품 관리에서 호출, 키 확인)
   if (e && e.parameter && e.parameter.action === 'productsAll') return productsAll(e.parameter.key);
   var status = 'ok';
@@ -2358,6 +2377,287 @@ function setBankInfo(data) {
     return respond({ ok: true, bank: bank, account: account, holder: holder });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
+  }
+}
+
+/* ============================================================
+ *  전화번호 인증 (SMS OTP) — 주문자 전화가 본인 것인지 확인합니다.
+ *  - 켜짐/꺼짐: '설정' 탭 PHONE_VERIFY_ENABLED ('TRUE'/'FALSE').
+ *    기본값은 꺼짐 (없거나 'FALSE'면 비활성화 — 기존 주문 흐름 유지).
+ *  - 인증코드 탭 '인증코드': [전화번호, 인증코드, 토큰, 생성일시, 만료일시,
+ *    시도횟수, 인증완료, 사용여부]. 전화번호·인증코드·토큰 열은 텍스트 형식.
+ *  - 인증번호: 6자리, 유효 5분. 확인 성공 시 20자 토큰 발급, 토큰 유효 30분.
+ *  - 속도 제한 (공개 엔드포인트라 남용 방지, 필수):
+ *    전화번호당 시간당 3번, 전체 시간당 50번, 코드당 확인 시도 5번까지.
+ *  - 토큰은 1회용 — 주문 저장 전 사용여부를 TRUE로 표시합니다.
+ *  - 인증 문자는 '문자발송기록' 탭에 구분 '인증'으로 남깁니다.
+ *  - 검증 대상은 주문자 전화(ordererPhone)만입니다. 받는 분 전화는 인증 안 합니다.
+ * ============================================================ */
+/** 인증코드 탭 (열: 전화번호, 인증코드, 토큰, 생성일시, 만료일시, 시도횟수, 인증완료, 사용여부) */
+var PHONE_VERIFY_SHEET_NAME = '인증코드';
+var PHONE_VERIFY_HEADERS = ['전화번호', '인증코드', '토큰', '생성일시', '만료일시', '시도횟수', '인증완료', '사용여부'];
+/** 인증번호 유효 시간 (분). */
+var PHONE_VERIFY_CODE_TTL_MIN = 5;
+/** 확인 성공 뒤 토큰 유효 시간 (분). */
+var PHONE_VERIFY_TOKEN_TTL_MIN = 30;
+/** 전화번호당 시간당 인증번호 요청 상한. */
+var PHONE_VERIFY_PER_PHONE_HOURLY = 3;
+/** 전체(모든 번호 합산) 시간당 인증번호 요청 상한. */
+var PHONE_VERIFY_GLOBAL_HOURLY = 50;
+/** 코드당 확인 시도 상한 (초과 시 코드 무효, 새로 받아야 함). */
+var PHONE_VERIFY_MAX_ATTEMPTS = 5;
+/** 속도 제한을 셀 때 최근 몇 행까지만 읽을지 (시간당 상한 50건이라 200행이면 충분). */
+var PHONE_VERIFY_RECENT_ROWS = 200;
+
+/** '인증코드' 탭을 가져옵니다. 없으면 헤더와 함께 만듭니다. */
+function getPhoneVerifySheet_(create) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(PHONE_VERIFY_SHEET_NAME);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(PHONE_VERIFY_SHEET_NAME);
+    sheet.getRange(1, 1, 1, PHONE_VERIFY_HEADERS.length).setValues([PHONE_VERIFY_HEADERS]);
+    sheet.setFrozenRows(1);
+    // 전화번호·인증코드·토큰 열(A:C)은 텍스트 형식으로 — 앞자리 0이
+    // 숫자로 바뀌어 사라지지 않게, 만들 때 미리 잡습니다.
+    sheet.getRange(2, 1, Math.max(1, sheet.getMaxRows() - 1), 3).setNumberFormat('@');
+  }
+  return sheet;
+}
+
+/** 전화번호 인증이 켜져 있는지 — '설정' 탭 PHONE_VERIFY_ENABLED가
+ *  'TRUE'일 때만 켜짐. 없거나 'FALSE'면 꺼짐 (기본값 꺼짐). */
+function isPhoneVerifyEnabled_() {
+  return String(getSetting_('PHONE_VERIFY_ENABLED') || '').trim().toUpperCase() === 'TRUE';
+}
+
+/** 'yyyy-MM-dd HH:mm:ss' 문자열을 Date로 풉니다. 형식이 틀리면 null. */
+function parseStamp_(s) {
+  var m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]));
+}
+
+/** 6자리 인증번호를 만듭니다 (100000~999999). */
+function generatePhoneVerifyCode_() {
+  return String(100000 + Math.floor(Math.random() * 900000));
+}
+
+/** 20자 영숫자 토큰을 만듭니다 (헷갈리는 문자 제외). */
+function generatePhoneVerifyToken_() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  var out = '';
+  for (var i = 0; i < 20; i++) {
+    out += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return out;
+}
+
+/** 최근 1시간의 인증번호 요청 건수를 셉니다 (해당 번호 + 전체).
+ *  시트 끝에서 최근 행만 읽습니다 — 시간당 상한이 50건이라 200행이면 충분합니다. */
+function countRecentPhoneVerifyRequests_(sheet, phone, now) {
+  var perPhone = 0;
+  var global = 0;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { perPhone: 0, global: 0 };
+  var take = Math.min(lastRow - 1, PHONE_VERIFY_RECENT_ROWS);
+  var rows = sheet.getRange(lastRow - take + 1, 1, take, PHONE_VERIFY_HEADERS.length).getDisplayValues();
+  for (var i = 0; i < rows.length; i++) {
+    var created = parseStamp_(rows[i][3]);
+    if (!created) continue;
+    if (now.getTime() - created.getTime() > 3600000) continue;
+    global++;
+    if (String(rows[i][0] || '').replace(/[^0-9]/g, '') === phone) perPhone++;
+  }
+  return { perPhone: perPhone, global: global };
+}
+
+/**
+ * 인증번호 요청 (D1, 공개 — checkAdmin 없음).
+ * body: { action: 'requestPhoneCode', phone }
+ * 전화번호 형식 검증 → 시간당 3번(해당 번호)·50번(전체) 제한 →
+ * 6자리 코드 생성·행 저장 → SMSGate로 발송 → '인증' 로그.
+ * 성공 {ok:true}, 실패 {ok:false, error}. 절대 throw하지 않습니다.
+ */
+function requestPhoneCode(data) {
+  try {
+    var phone = normalizeMobileDigits_(data && data.phone);
+    if (!isValidMobileDigits_(phone)) {
+      return respond({ ok: false, error: '전화번호를 확인해 주세요.' });
+    }
+    var now = new Date();
+    var code = generatePhoneVerifyCode_();
+    var created = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    var expires = Utilities.formatDate(new Date(now.getTime() + PHONE_VERIFY_CODE_TTL_MIN * 60000), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    // 속도 제한 검사와 행 저장은 락 안에서 — 동시에 두 요청이 들어와도
+    // 상한을 넘기지 않게. 발송은 네트워크 호출이라 락 해제 뒤에 합니다.
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var sheet = getPhoneVerifySheet_(true);
+      var counts = countRecentPhoneVerifyRequests_(sheet, phone, now);
+      if (counts.perPhone >= PHONE_VERIFY_PER_PHONE_HOURLY) {
+        return respond({ ok: false, error: '인증번호는 시간당 3번까지만 받을 수 있습니다.' });
+      }
+      if (counts.global >= PHONE_VERIFY_GLOBAL_HOURLY) {
+        return respond({ ok: false, error: '잠시 후 다시 시도해 주세요.' });
+      }
+      var targetRow = sheet.getLastRow() + 1;
+      sheet.getRange(targetRow, 1, 1, 3).setNumberFormat('@');
+      sheet.appendRow([phone, code, '', created, expires, 0, 'FALSE', 'FALSE']);
+    } finally {
+      lock.releaseLock();
+    }
+    var message = '[효돈농원] 인증번호는 ' + code + '입니다. 5분 안에 입력해 주세요.';
+    var ok = false;
+    try { ok = sendSmsViaSmsGate_(phone, message); } catch (e) { ok = false; }
+    try {
+      var logSheet = getSmsLogSheet_();
+      logPromoSend_(logSheet, '인증', message, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [phone]);
+    } catch (logErr) {
+      Logger.log('requestPhoneCode log failed: ' + logErr);
+    }
+    if (!ok) return respond({ ok: false, error: '문자 발송에 실패했습니다. 다시 시도해 주세요.' });
+    return respond({ ok: true });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 인증번호 확인 (D1, 공개 — checkAdmin 없음).
+ * body: { action: 'verifyPhoneCode', phone, code }
+ * 해당 번호의 가장 최근 미확인·미만료 행을 찾습니다. 없으면
+ * '인증번호를 먼저 받아주세요.' / 코드 불일치 시 시도횟수+1, 5회째
+ * 실패면 '시도 횟수를 초과했습니다…' / 일치 시 토큰 생성·인증완료=TRUE·
+ * 만료일시 지금+30분 → {ok:true, token}. 절대 throw하지 않습니다.
+ */
+function verifyPhoneCode(data) {
+  try {
+    var phone = normalizeMobileDigits_(data && data.phone);
+    if (!isValidMobileDigits_(phone)) {
+      return respond({ ok: false, error: '전화번호를 확인해 주세요.' });
+    }
+    var code = String((data && data.code) || '').replace(/[^0-9]/g, '');
+    if (code.length !== 6) {
+      return respond({ ok: false, error: '인증번호 6자리를 입력해 주세요.' });
+    }
+    var sheet = getPhoneVerifySheet_(false);
+    if (!sheet || sheet.getLastRow() < 2) {
+      return respond({ ok: false, error: '인증번호를 먼저 받아주세요.' });
+    }
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var lastRow = sheet.getLastRow();
+      var take = Math.min(lastRow - 1, PHONE_VERIFY_RECENT_ROWS);
+      var rows = sheet.getRange(lastRow - take + 1, 1, take, PHONE_VERIFY_HEADERS.length).getDisplayValues();
+      var now = new Date();
+      var idx = -1;
+      for (var i = rows.length - 1; i >= 0; i--) {
+        var r = rows[i];
+        if (String(r[0] || '').replace(/[^0-9]/g, '') !== phone) continue;
+        if (String(r[6] || '').trim().toUpperCase() === 'TRUE') continue;
+        var exp = parseStamp_(r[4]);
+        if (!exp || exp.getTime() <= now.getTime()) continue;
+        idx = i;
+        break;
+      }
+      if (idx < 0) {
+        return respond({ ok: false, error: '인증번호를 먼저 받아주세요.' });
+      }
+      var rowNum = lastRow - take + 1 + idx;
+      var row = rows[idx];
+      var attempts = Number(row[5] || 0) || 0;
+      if (String(row[1] || '').replace(/[^0-9]/g, '') !== code) {
+        attempts += 1;
+        sheet.getRange(rowNum, 6).setValue(attempts);
+        if (attempts >= PHONE_VERIFY_MAX_ATTEMPTS) {
+          return respond({ ok: false, error: '시도 횟수를 초과했습니다. 인증번호를 다시 받아주세요.' });
+        }
+        return respond({ ok: false, error: '인증번호가 맞지 않습니다.' });
+      }
+      var token = generatePhoneVerifyToken_();
+      var tokenExpires = Utilities.formatDate(new Date(now.getTime() + PHONE_VERIFY_TOKEN_TTL_MIN * 60000), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+      sheet.getRange(rowNum, 3).setValue(token);
+      sheet.getRange(rowNum, 5).setValue(tokenExpires);
+      sheet.getRange(rowNum, 7).setValue('TRUE');
+      return respond({ ok: true, token: token });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 전화번호 인증 켜짐 여부 공개 조회 (D1, 인증 없음) — 홈페이지용.
+ *  {ok:true, enabled}를 반환합니다. */
+function phoneVerifyStatus() {
+  return respond({ ok: true, enabled: isPhoneVerifyEnabled_() });
+}
+
+/** 전화번호 인증 켜짐 여부 조회 (D2, checkAdmin) — 관리자 표시용. */
+function getPhoneVerifyEnabled(data) {
+  try {
+    checkAdmin(data && data.key);
+    return respond({ ok: true, enabled: isPhoneVerifyEnabled_() });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 전화번호 인증 켜기/끄기 (D2, checkAdmin)
+ * body: { action: 'setPhoneVerifyEnabled', key: 관리자 키, enabled: boolean }
+ */
+function setPhoneVerifyEnabled(data) {
+  try {
+    checkAdmin(data && data.key);
+    var enabled = !!(data && data.enabled);
+    setSetting_('PHONE_VERIFY_ENABLED', enabled ? 'TRUE' : 'FALSE');
+    return respond({ ok: true, enabled: enabled });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 주문 저장 전 토큰을 1회용으로 소모합니다. 유효한 토큰 행이 있으면
+ * 사용여부를 TRUE로 표시하고 true를, 없으면 false를 반환합니다.
+ * doPost가 아직 주문 락을 잡기 전에 호출되므로 여기서 짧게 락을 잡습니다.
+ * 유효 조건: 토큰 일치, 전화번호가 주문자 전화와 일치, 인증완료=TRUE,
+ * 사용여부=FALSE, 만료일시 > 지금.
+ */
+function consumePhoneVerifyToken_(phone, token) {
+  try {
+    if (!phone || !token) return false;
+    var sheet = getPhoneVerifySheet_(false);
+    if (!sheet || sheet.getLastRow() < 2) return false;
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var lastRow = sheet.getLastRow();
+      var take = Math.min(lastRow - 1, PHONE_VERIFY_RECENT_ROWS);
+      var rows = sheet.getRange(lastRow - take + 1, 1, take, PHONE_VERIFY_HEADERS.length).getDisplayValues();
+      var now = new Date();
+      for (var i = rows.length - 1; i >= 0; i--) {
+        var r = rows[i];
+        if (String(r[0] || '').replace(/[^0-9]/g, '') !== phone) continue;
+        if (String(r[2] || '').trim() !== String(token).trim()) continue;
+        if (String(r[6] || '').trim().toUpperCase() !== 'TRUE') continue;
+        if (String(r[7] || '').trim().toUpperCase() === 'TRUE') continue;
+        var exp = parseStamp_(r[4]);
+        if (!exp || exp.getTime() <= now.getTime()) continue;
+        sheet.getRange(lastRow - take + 1 + i, 8).setValue('TRUE');
+        return true;
+      }
+      return false;
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    Logger.log('consumePhoneVerifyToken_ failed: ' + err);
+    return false;
   }
 }
 
