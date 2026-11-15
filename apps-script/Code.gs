@@ -2175,6 +2175,22 @@ function countQueueStatus_(rows, status) {
 }
 
 /**
+ * N-E-P2-3: 큐 행들에서 오늘 처리시작한 '기록실패' 건수를 셉니다.
+ * '기록실패'는 발송은 됐는데 로그 쓰기가 끝내 안 된 행이라 '문자발송기록'
+ * 행이 없어 로그 기반 하루 한도(countTodaySent_)에서 빠졌습니다. 발송일시
+ * (6열)는 기록 실패 시 안 남으므로, 배치에서 뽑힐 때 찍히는 처리시작
+ * (5열, yyyy-MM-dd HH:mm:ss)의 날짜로 오늘 것인지 봅니다. 순수 함수입니다.
+ */
+function countQueueRecordFailed_(rows, today) {
+  var n = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i] || [];
+    if (String(r[3] || '') === '기록실패' && String(r[4] || '').substring(0, 10) === today) n++;
+  }
+  return n;
+}
+
+/**
  * 큐 배치 1회분을 1건씩 순차 발송합니다.
  * sendFn(phone, message)는 성공 시 true, 실패 시 false를 반환합니다.
  * 건마다 sleepFn(대기 시간)을 부릅니다 — 마지막 건 뒤에는 쉬지 않습니다
@@ -2255,11 +2271,21 @@ function logPromoSend_(sheet, kind, message, total, sent, failed, failedNumbers)
 }
 
 /** 오늘(KST) '홍보' 발송 성공 건수를 '문자발송기록' 탭에서 읽습니다. */
-function readTodaySent_(logSheet, today) {
+/**
+ * 오늘(KST) '홍보' 발송 성공 건수. 로그 행 + '기록실패' 큐 행을 합산합니다.
+ * queueRows를 주면 N-E-P2-3에 따라 오늘 처리시작한 '기록실패' 행도
+ * 1건씩 더합니다 (발송은 됐는데 로그가 없어 한도에서 빠지는 것을 막습니다).
+ * 생략하면 기존처럼 로그만 셉니다.
+ */
+function readTodaySent_(logSheet, today, queueRows) {
+  var n = 0;
   var lastRow = logSheet.getLastRow();
-  if (lastRow < 2) return 0;
-  var rows = logSheet.getRange(2, 1, lastRow - 1, SMS_LOG_HEADERS.length).getDisplayValues();
-  return countTodaySent_(rows, today);
+  if (lastRow >= 2) {
+    var rows = logSheet.getRange(2, 1, lastRow - 1, SMS_LOG_HEADERS.length).getDisplayValues();
+    n = countTodaySent_(rows, today);
+  }
+  if (queueRows) n += countQueueRecordFailed_(queueRows, today);
+  return n;
 }
 
 /**
@@ -2444,7 +2470,8 @@ function processPromoQueue_() {
       }
     }
     // 2) 한도 검사 (복구 뒤에 — 복구된 행은 다시 보낼 수 있게).
-    var todaySent = readTodaySent_(logSheet, today);
+    // N-E-P2-3: '기록실패' 행도 한도에 더합니다 (qRows를 넘깁니다).
+    var todaySent = readTodaySent_(logSheet, today, qRows);
     var remaining = PROMO_DAILY_LIMIT - todaySent;
     if (remaining <= 0) {
       Logger.log('processPromoQueue_: 오늘 하루 한도(100건)를 모두 사용했습니다.');
@@ -2592,7 +2619,8 @@ function getPromoStatus(data) {
       }
     }
     var today = todayKst_();
-    var todaySent = readTodaySent_(logSheet, today);
+    // N-E-P2-3: '기록실패' 행도 한도에 더합니다 (qRows를 넘깁니다).
+    var todaySent = readTodaySent_(logSheet, today, qRows);
     var recent = [];
     var lLast = logSheet.getLastRow();
     if (lLast >= 2) {
@@ -2701,6 +2729,12 @@ function updatePromo(data) {
         return respond({ ok: false, error: '유효한 휴대폰 번호가 아닙니다. 010으로 시작하는 번호를 입력하세요.' });
       }
       newPhone = e164ToDomestic_(numbers[0]);
+      // P1-5: 수신거부된 번호로는 예약을 바꿀 수 없습니다 ('홍보수신자' 탭).
+      // reservePromo·sendPromoTest는 이미 걸러내는데 updatePromo만 빠져 있어
+      // 거부된 번호를 예약 편집으로 다시 넣으면 발송됐습니다.
+      if (getOptedOutPhones_().indexOf(newPhone) >= 0) {
+        return respond({ ok: false, error: '수신거부된 번호입니다. 홍보 문자를 보낼 수 없습니다.' });
+      }
     }
     var sheet = getPromoQueueSheet_();
     var lock = LockService.getScriptLock();
