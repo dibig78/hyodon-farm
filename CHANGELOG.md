@@ -1,5 +1,15 @@
 # 변경 내역 (효돈농원 직거래 주문 페이지)
 
+## 2026-11-15 — 오시는 길·고객 문의를 별도 페이지로 분리
+
+- `directions.html` + `inquiry.html` 신설 (기존 admin/track 멀티페이지 패턴 그대로 — `vite.config.ts` rollupOptions input, 각 페이지 엔트리 `src/main-directions.tsx` / `src/main-inquiry.tsx`).
+- 오시는 길: 홈페이지 `#directions` 섹션을 `src/pages/DirectionsPage.tsx`로 통째 이동 (도로명·지번·전화·구글 지도 링크 버튼·전화하기·지도 embed iframe 그대로, h1으로 승격).
+- 고객 문의: 홈페이지 `id="inquiry"` 섹션을 `src/pages/InquiryPage.tsx`로 통째 이동 (`InquiryForm` 그대로 재사용 — 제출 흐름·완료 카드·"또 문의하기"·비공개 안내 그대로, h1으로 승격).
+- 네비는 6개 항목으로 통일 (상품 / 갤러리 / 주문서 / 배송·문의 / 오시는 길 / 고객 문의 — 고객 문의는 마지막). 홈페이지 네비는 `HOME_NAV`, 서브페이지는 `PAGE_NAV` (`src/lib/siteNav.ts` 한 곳에서 관리; 서브페이지의 홈페이지 섹션 링크는 `./index.html#products` 같은 상대 경로). FAQ "문의하기" 버튼과 푸터 "고객 문의" 링크는 `./inquiry.html`로 변경. 홈페이지에서 두 섹션 제거, 빈 공간 남지 않게 정리.
+- PWA: `sw.js` precache 목록에 `directions.html`·`inquiry.html` 추가.
+- 검증: 빌드 성공, doctor pass 20 / warn 2(기존) / fail 0, Playwright **54/54** (데스크톱: 홈페이지 섹션 제거·네비 6개·링크 href·네비 클릭 이동·오시는 길 주소·전화·지도 링크·iframe src·문의 폼 제출 모킹·완료 카드·또 문의하기·빈 폼 에러 / 모바일 390px: 세 페이지 가로 오버플로 0·메뉴 6개 한 줄·브랜드 침범 없음(x=126, 브랜드 끝 118)·스크롤 후 고객 문의 보임·클릭 시 메뉴 닫힘 + inquiry.html 이동), 스크린샷 10장 직접 판독 (`docs/separate-pages-2026-11-15/shots/`). 단, 지도 embed의 실제 타일 렌더는 샌드박스 외부 네트워크 차단으로 눈으로 확인 못 함 (iframe src 검증으로 대체 확인, 이전과 동일).
+- 라이브 확인: 완료 (2026-11-15 13:00 KST, 커밋 7f8a40c) — 라이브 index.html이 새 번들 `main-seatxgXt.js`를 참조(로컬 dist 지문과 일치), `directions.html`·`inquiry.html` 모두 200, 각 페이지가 새 청크 `directions-C1drxfzc.js`·`inquiry-DWSNGiyA.js` 참조(로컬과 일치). 라이브 siteNav 청크에 `directions.html`·`inquiry.html`·"고객 문의" 포함, config 청크에 구글 지도 URL, api 청크에 submitInquiry 포함 확인.
+
 ## 2026-11-15 — 오시는 길 메뉴·섹션 추가
 
 - 홈페이지 네비에 "오시는 길" 5번째 항목 추가 (상품 / 갤러리 / 주문서 / 배송·문의 뒤) + `#directions` 섹션 신규 (FAQ 뒤, 고객 문의 앞): 도로명주소 "제주특별자치도 서귀포시 칠십리로 636", 지번 "하효동 1233", 전화 010-2696-1326, "구글 지도로 보기" 버튼(구글 지도 검색 링크) + "전화하기" 버튼 + 구글 지도 embed iframe(16:9).
