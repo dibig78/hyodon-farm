@@ -145,6 +145,7 @@ function doPost(e) {
     if (data.action === 'delete') return adminDelete(data);
     if (data.action === 'setSplitTracking') return setSplitTracking(data);
     if (data.action === 'bulkImportTracking') return bulkImportTracking(data);
+    if (data.action === 'sendCustomerSms') return sendCustomerSms(data);
 
     // 로젠택배 API 자동 연동 (admin.html 로젠 API에서 호출, 배포 2 관리자 전용)
     if (data.action === 'getLogenStatus') return getLogenStatus(data);
@@ -2125,9 +2126,84 @@ function notifyCustomerOrder_(data, productText) {
       message = '[효돈농원] 주문이 접수되었습니다. ' + productText + ' ' + amount + '원, ' +
         '입금 계좌는 농원에서 확인 후 문자로 안내드립니다. 입금자명: ' + data.depositor;
     }
-    notifyCustomer_(data.ordererPhone, message);
+    return notifyCustomer_(data.ordererPhone, message);
   } catch (err) {
     Logger.log('notifyCustomerOrder_ failed: ' + err);
+    return false;
+  }
+}
+
+/**
+ * 손님 문자 수동 발송 (admin.html 주문 상세 "고객 문자 보내기"에서 호출, 배포 2 관리자 전용).
+ * {row, stage: 'order'|'paid'|'shipped', groupIndex?}를 받아 해당 주문의
+ * 손님 전화로 1·2·3단계 문자를 직접 보냅니다 (자동 알림이 안 갔거나 손님이
+ * 못 받았을 때 다시 보내기용).
+ * - 'order': 주문자 전화로 1단계 주문 접수 문자 (notifyCustomerOrder_ 재사용,
+ *   계좌 있으면 포함, 없으면 "입금 계좌는 농원에서 확인 후 문자로 안내" 문구).
+ * - 'paid': 주문자 전화로 2단계 입금 확인 문자 (CUSTOMER_PAID_MESSAGE).
+ * - 'shipped': groupIndex 0 = 기본 배송지(받는 분 전화, 대표 송장), 1+ = 분리
+ *   배송지 그룹 순서(해당 그룹 받는 분 전화, 그룹 송장, 문구에 상품명 포함).
+ *   해당 그룹에 송장번호가 없으면 발송하지 않고 에러를 돌려줍니다.
+ * 시트를 쓰지 않으므로 락은 안 잡습니다. 발송 실패 시 {ok:false, error}를
+ * 돌려주고, throw하지 않습니다 (주문·관리자 상태는 건드리지 않습니다).
+ */
+function sendCustomerSms(data) {
+  try {
+    checkAdmin(data && data.key);
+    var row = Number(data && data.row || 0);
+    if (!row || row < 2) return respond({ ok: false, error: '주문을 찾을 수 없습니다.' });
+    var stage = String(data && data.stage || '');
+    if (stage !== 'order' && stage !== 'paid' && stage !== 'shipped') {
+      return respond({ ok: false, error: '문자 종류를 확인해 주세요.' });
+    }
+    var sheet = getSheet();
+    if (row > sheet.getLastRow()) return respond({ ok: false, error: '주문을 찾을 수 없습니다.' });
+    var r = sheet.getRange(row, 1, 1, HEADERS.length).getDisplayValues()[0];
+    var productText = String(r[1] || '').trim();
+    var totalAmount = Number(String(r[3] || '').replace(/[^0-9]/g, '') || 0);
+    var depositor = String(r[4] || '').trim();
+    var ordererPhone = normalizeMobileDigits_(String(r[6] || '').trim());
+    var receiverPhone = normalizeMobileDigits_(String(r[8] || '').trim());
+    if (stage === 'order') {
+      if (!isValidMobileDigits_(ordererPhone)) return respond({ ok: false, error: '전화번호를 확인해 주세요.' });
+      var okOrder = notifyCustomerOrder_({ totalAmount: totalAmount, ordererPhone: ordererPhone, depositor: depositor }, productText);
+      if (!okOrder) return respond({ ok: false, error: '문자 발송에 실패했습니다.' });
+      return respond({ ok: true, stage: stage, phone: ordererPhone });
+    }
+    if (stage === 'paid') {
+      if (!isValidMobileDigits_(ordererPhone)) return respond({ ok: false, error: '전화번호를 확인해 주세요.' });
+      var okPaid = notifyCustomer_(ordererPhone, CUSTOMER_PAID_MESSAGE);
+      if (!okPaid) return respond({ ok: false, error: '문자 발송에 실패했습니다.' });
+      return respond({ ok: true, stage: stage, phone: ordererPhone });
+    }
+    // 'shipped' — groupIndex 0 = 기본 배송지, 1+ = 분리 배송지 그룹 순서.
+    var groupIndex = Number(data && data.groupIndex || 0);
+    if (groupIndex < 0) groupIndex = 0;
+    var phone, tracking, itemsText = '';
+    if (groupIndex === 0) {
+      phone = receiverPhone;
+      tracking = String(r[12] || '').trim();
+    } else {
+      var overrides = parseDeliveryOverrides_(String(r[14] || ''));
+      var groups = groupDeliveryOverrides_(overrides);
+      var g = groups[groupIndex - 1];
+      if (!g) return respond({ ok: false, error: '해당 배송지가 없습니다.' });
+      phone = normalizeMobileDigits_(String(g.phone || '').trim());
+      tracking = String(g.trackingNumber || '').trim();
+      itemsText = g.items.map(function (d) {
+        return (d.itemName || d.itemId) + ' ' + (Number(d.qty) || 0) + '박스';
+      }).join(', ');
+    }
+    if (!tracking) return respond({ ok: false, error: '송장번호가 없습니다. 송장번호를 먼저 입력해 주세요.' });
+    if (!isValidMobileDigits_(phone)) return respond({ ok: false, error: '전화번호를 확인해 주세요.' });
+    var message = itemsText
+      ? '[효돈농원] 출고되었습니다. ' + itemsText + ' 송장번호 ' + tracking + ', 로젠택배에서 조회할 수 있습니다. 내일·모레 도착합니다.'
+      : customerShippedMessage_(tracking);
+    var okShipped = notifyCustomer_(phone, message);
+    if (!okShipped) return respond({ ok: false, error: '문자 발송에 실패했습니다.' });
+    return respond({ ok: true, stage: stage, groupIndex: groupIndex, phone: phone });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
   }
 }
 
