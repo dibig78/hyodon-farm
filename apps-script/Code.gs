@@ -158,6 +158,8 @@ function doPost(e) {
     // 사진 슬롯은 slot 필드로 받습니다. (key를 슬롯으로 쓰면 키 확인과 겹칩니다)
     if (data.action === 'uploadPhoto') return uploadPhoto(data);
     if (data.action === 'deletePhoto') return deletePhoto(data);
+    if (data.action === 'galleryMeta/save') return galleryMetaSave(data);
+    if (data.action === 'galleryMeta/delete') return galleryMetaDelete(data);
 
     // 새 주문 문자 알림 테스트 (admin.html에서 호출, 계정 확인은 testSmsGate 안에서)
     if (data.action === 'testSmsGate') return testSmsGate(data);
@@ -347,6 +349,8 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'track') return trackGet(e.parameter.phone);
   // 홈페이지 사진 설정 조회 (index.html에서 ?action=photos 로 호출, 키 없음)
   if (e && e.parameter && e.parameter.action === 'photos') return photosGet();
+  // 농장 갤러리 메타 조회 (?action=galleryMeta 로 호출, 키 없음)
+  if (e && e.parameter && e.parameter.action === 'galleryMeta') return galleryMetaGet();
   // 상품 목록 조회 (index.html에서 ?action=products 로 호출, 키 없음)
   if (e && e.parameter && e.parameter.action === 'products') return productsGet();
   // 입금 계좌 조회 (index.html 결제 안내에서 ?action=bankInfo 로 호출, 키 없음)
@@ -1700,6 +1704,140 @@ function deletePhoto(data) {
     // 상품 id로 되돌리면 같은 상품의 옛 슬롯 행도 함께 지웁니다.
     var legacyDel = LEGACY_PHOTO_KEYS[slot];
     if (legacyDel) deletePhotoRowIn_(sheet, legacyDel);
+    return respond({ ok: true, slot: slot });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/* ============================================================
+ *  농장 갤러리 메타 (갤러리설정 탭) — 갤러리 강화 (2026-11-15, 그릴링 Q4~Q9)
+ *  - 사진 URL(사진설정)과는 별도 탭입니다. 사진을 바꾸거나 되돌려도
+ *    캡션·분류·순서는 슬롯에 남습니다.
+ *  - 열: slot, caption, category, sort_order, updatedAt.
+ *    category는 '귤'·'농원'·'포장'·'배송' 중 하나 ('전체'는 필터일 뿐
+ *    저장 값이 아닙니다). sort_order가 작을수록 앞에 보입니다.
+ *  - 조회는 공개 (?action=galleryMeta), 저장·삭제는 관리자 전용입니다.
+ *  - Workers 상당: D1 gallery_meta — GET /api/galleryMeta,
+ *    POST galleryMeta/save · galleryMeta/delete.
+ * ============================================================ */
+/** 갤러리설정 탭 이름 (열: slot, caption, category, sort_order, updatedAt) */
+var GALLERY_META_SHEET_NAME = '갤러리설정';
+var GALLERY_META_HEADERS = ['slot', 'caption', 'category', 'sort_order', 'updatedAt'];
+/** 갤러리 슬롯 키 — 사진 슬롯 중 gallery-1~6만 메타를 가집니다. */
+var GALLERY_SLOT_KEYS = ['gallery-1', 'gallery-2', 'gallery-3', 'gallery-4', 'gallery-5', 'gallery-6'];
+/** 갤러리 분류 — 저장 값은 이 4개만 받습니다. */
+var GALLERY_CATEGORIES = ['귤', '농원', '포장', '배송'];
+/** 캡션 길이 상한 (프론트·Workers와 같은 값). */
+var GALLERY_CAPTION_MAX_LENGTH = 100;
+
+/** 갤러리설정 탭을 가져옵니다. 없으면 헤더와 함께 만듭니다. */
+function getGalleryMetaSheet() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(GALLERY_META_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(GALLERY_META_SHEET_NAME);
+    sheet.getRange(1, 1, 1, GALLERY_META_HEADERS.length).setValues([GALLERY_META_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** 갤러리 메타 공개 조회 — { galleryMeta: { slot: { caption, category, sort_order } } }. */
+function galleryMetaGet() {
+  try {
+    var galleryMeta = {};
+    var sheet = getGalleryMetaSheet();
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var values = sheet.getRange(2, 1, lastRow - 1, 4).getDisplayValues();
+      for (var i = 0; i < values.length; i++) {
+        var slot = String(values[i][0] || '').trim();
+        if (GALLERY_SLOT_KEYS.indexOf(slot) < 0) continue;
+        var category = String(values[i][2] || '').trim();
+        var order = Number(String(values[i][3] || '').replace(/,/g, ''));
+        galleryMeta[slot] = {
+          caption: String(values[i][1] || '').trim(),
+          category: GALLERY_CATEGORIES.indexOf(category) >= 0 ? category : '귤',
+          sort_order: isFinite(order) ? Math.floor(order) : 0,
+        };
+      }
+    }
+    return respond({ ok: true, galleryMeta: galleryMeta });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 갤러리 메타 입력 검증 — 틀린 값은 에러 문구를 돌려줍니다. */
+function validateGalleryMetaInput_(data) {
+  var slot = String((data && data.slot) || '').trim();
+  if (GALLERY_SLOT_KEYS.indexOf(slot) < 0) return '알 수 없는 갤러리 슬롯입니다: ' + slot;
+  var caption = String((data && data.caption) || '').trim();
+  if (caption.length > GALLERY_CAPTION_MAX_LENGTH) return '사진 설명은 100자까지만 입력할 수 있습니다.';
+  var category = String((data && data.category) || '').trim();
+  if (GALLERY_CATEGORIES.indexOf(category) < 0) return '알 수 없는 분류입니다: ' + category;
+  var order = Number(data && data.sort_order);
+  if (!isFinite(order) || Math.floor(order) < 0 || Math.floor(order) > 10000) return '순서 값이 올바르지 않습니다.';
+  return { slot: slot, caption: caption, category: category, sort_order: Math.floor(order) };
+}
+
+/**
+ * 갤러리 메타 저장 (관리자 전용) — 한 슬롯의 캡션·분류·순서를 갈아 끼웁니다.
+ * body: { action: 'galleryMeta/save', key: 관리자 키, slot, caption, category, sort_order }
+ */
+function galleryMetaSave(data) {
+  try {
+    checkAdmin(data && data.key);
+    var input = validateGalleryMetaInput_(data);
+    if (typeof input === 'string') return respond({ ok: false, error: input });
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var sheet = getGalleryMetaSheet();
+      var stamp = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var keys = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+        for (var i = 0; i < keys.length; i++) {
+          if (String(keys[i][0] || '').trim() === input.slot) {
+            sheet.getRange(i + 2, 2, 1, 4).setValues([[input.caption, input.category, input.sort_order, stamp]]);
+            return respond({ ok: true, slot: input.slot });
+          }
+        }
+      }
+      sheet.appendRow([input.slot, input.caption, input.category, input.sort_order, stamp]);
+    } finally {
+      lock.releaseLock();
+    }
+    return respond({ ok: true, slot: input.slot });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 갤러리 메타 삭제 (관리자 전용) — 해당 슬롯이 기본 설명·분류·순서로 돌아갑니다.
+ * body: { action: 'galleryMeta/delete', key: 관리자 키, slot }
+ */
+function galleryMetaDelete(data) {
+  try {
+    checkAdmin(data && data.key);
+    var slot = String((data && data.slot) || '').trim();
+    if (GALLERY_SLOT_KEYS.indexOf(slot) < 0) {
+      return respond({ ok: false, error: '알 수 없는 갤러리 슬롯입니다: ' + slot });
+    }
+    var sheet = getGalleryMetaSheet();
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var keys = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+      for (var i = 0; i < keys.length; i++) {
+        if (String(keys[i][0] || '').trim() === slot) {
+          sheet.deleteRow(i + 2);
+          break;
+        }
+      }
+    }
     return respond({ ok: true, slot: slot });
   } catch (err) {
     return respond({ ok: false, error: String(err) });
