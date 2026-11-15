@@ -171,6 +171,10 @@ function doPost(e) {
     if (data.action === 'getNotifyPhone') return getNotifyPhone(data);
     if (data.action === 'setNotifyPhone') return setNotifyPhone(data);
 
+    // 입금 계좌 조회·저장 (admin.html 문자 보내기에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'getBankInfo') return getBankInfo(data);
+    if (data.action === 'setBankInfo') return setBankInfo(data);
+
     // 홍보 예약 편집·취소·다시 보내기 (admin.html 홍보 문자에서 호출, 배포 2 관리자 전용)
     if (data.action === 'updatePromo') return updatePromo(data);
     if (data.action === 'cancelPromo') return cancelPromo(data);
@@ -292,6 +296,9 @@ function doPost(e) {
 
     notify(data, productText);
     notifyNewOrder_(data, productText);
+    // 1단계 손님 문자: 주문 접수 뒤 주문자 전화로 자동 발송합니다.
+    // 주문이 저장된 뒤라 실패해도 주문 접수는 그대로 성공입니다.
+    notifyCustomerOrder_(data, productText);
 
     return respond({
       ok: true,
@@ -316,6 +323,8 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'photos') return photosGet();
   // 상품 목록 조회 (index.html에서 ?action=products 로 호출, 키 없음)
   if (e && e.parameter && e.parameter.action === 'products') return productsGet();
+  // 입금 계좌 조회 (index.html 결제 안내에서 ?action=bankInfo 로 호출, 키 없음)
+  if (e && e.parameter && e.parameter.action === 'bankInfo') return bankInfoGet();
   // 상품 전체 목록 조회 (admin.html 상품 관리에서 호출, 키 확인)
   if (e && e.parameter && e.parameter.action === 'productsAll') return productsAll(e.parameter.key);
   var status = 'ok';
@@ -537,6 +546,11 @@ function adminUpdateBatch(data) {
     if (!updates.length) return respond({ ok: false, error: '업데이트할 주문이 없습니다.' });
     var sheet = getSheet();
     var lastRow = sheet.getLastRow();
+    // 2·3단계 손님 문자: 쓸 행의 이전 입금·송장 값을 보고 전환이 있을 때만
+    // 보낼 목록을 모읍니다. 발송 자체는 락을 풀고 난 뒤에 합니다 (게이트웨이
+    // 호출이 락을 오래 잡지 않게). bulkPaid도 이 함수(updateBatch)를
+    // 쓰므로 입금 확인 일괄 처리에도 2단계가 자동 발송됩니다.
+    var customerSms = [];
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
@@ -555,12 +569,33 @@ function adminUpdateBatch(data) {
         var u = updates[i] || {};
         var row = Number(u.row || 0);
         if (!row || row < 2 || row > lastRow) continue;
+        // 2·3단계 판정용 이전 값 (쓰기 전에 읽음).
+        var before = sheet.getRange(row, 1, 1, HEADERS.length).getDisplayValues()[0];
+        var wasPaid = String(before[11] || '').trim() === '확인';
+        var wasTracking = String(before[12] || '').trim();
+        var ordererPhone = String(before[6] || '').trim();
+        var receiverPhone = String(before[8] || '').trim();
+        var newTracking = String(u.tracking || '').trim();
         sheet.getRange(row, 12).setValue(u.paid ? '확인' : '');
         // M열(13): 송장번호 — 앞자리 0이 사라지지 않게 텍스트 형식으로 저장
         sheet.getRange(row, 13).setNumberFormat('@').setValue(safe(u.tracking));
+        // 2단계: 입금이 false→true로 바뀔 때만 주문자 전화로 보냄.
+        // 이미 입금된 주문을 다시 저장해도 재발송하지 않음.
+        if (!wasPaid && u.paid && ordererPhone) {
+          customerSms.push({ phone: ordererPhone, message: CUSTOMER_PAID_MESSAGE });
+        }
+        // 3단계: 송장번호가 새로 들어갈 때만 받는 분 전화로 보냄.
+        // 이미 있던 번호를 다시 저장해도 재발송하지 않음.
+        if (!wasTracking && newTracking && receiverPhone) {
+          customerSms.push({ phone: receiverPhone, message: customerShippedMessage_(newTracking) });
+        }
       }
     } finally {
       lock.releaseLock();
+    }
+    // 락을 풀고 손님 문자를 보냅니다 (발송 실패가 업데이트를 막지 않음).
+    for (var s = 0; s < customerSms.length; s++) {
+      notifyCustomer_(customerSms[s].phone, customerSms[s].message);
     }
     return respond({ ok: true, updated: updates.length });
   } catch (err) {
@@ -626,6 +661,9 @@ function adminUpdate(data) {
     if (!row || row < 2) return respond({ ok: false, error: '잘못된 행 번호입니다.' });
     var sheet = getSheet();
     if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
+    // 2·3단계 손님 문자: 이전 입금·송장 값을 보고 전환이 있을 때만
+    // 보낼 목록을 모읍니다. 발송은 락을 풀고 난 뒤에 합니다.
+    var customerSms = [];
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
@@ -634,12 +672,31 @@ function adminUpdate(data) {
       if (row > sheet.getLastRow()) return respond({ ok: false, error: '없는 주문입니다.' });
       var fpUpd = checkRowFingerprint_(sheet, row, data);
       if (fpUpd) return respond({ ok: false, error: fpUpd });
+      // 2·3단계 판정용 이전 값 (쓰기 전에 읽음).
+      var before = sheet.getRange(row, 1, 1, HEADERS.length).getDisplayValues()[0];
+      var wasPaid = String(before[11] || '').trim() === '확인';
+      var wasTracking = String(before[12] || '').trim();
+      var ordererPhone = String(before[6] || '').trim();
+      var receiverPhone = String(before[8] || '').trim();
+      var newTracking = String(data.tracking || '').trim();
       // L열(12): 입금확인 — 체크되면 '확인'이라고 적고, 해제되면 비웁니다.
       sheet.getRange(row, 12).setValue(data.paid ? '확인' : '');
       // M열(13): 송장번호 — 앞자리 0이 사라지지 않게 텍스트 형식으로 저장
       sheet.getRange(row, 13).setNumberFormat('@').setValue(safe(data.tracking));
+      // 2단계: 입금이 false→true로 바뀔 때만 주문자 전화로 보냄.
+      if (!wasPaid && data.paid && ordererPhone) {
+        customerSms.push({ phone: ordererPhone, message: CUSTOMER_PAID_MESSAGE });
+      }
+      // 3단계: 송장번호가 새로 들어갈 때만 받는 분 전화로 보냄.
+      if (!wasTracking && newTracking && receiverPhone) {
+        customerSms.push({ phone: receiverPhone, message: customerShippedMessage_(newTracking) });
+      }
     } finally {
       lock.releaseLock();
+    }
+    // 락을 풀고 손님 문자를 보냅니다 (발송 실패가 업데이트를 막지 않음).
+    for (var s = 0; s < customerSms.length; s++) {
+      notifyCustomer_(customerSms[s].phone, customerSms[s].message);
     }
     return respond({ ok: true, row: row });
   } catch (err) {
@@ -663,6 +720,9 @@ function setSplitTracking(data) {
     if (!Array.isArray(itemIds) || !itemIds.length) return respond({ ok: false, error: '송장번호를 저장할 상품을 선택해 주세요.' });
     // 송장번호는 숫자만 허용 — 앞자리 0은 문자열 그대로 두어 유지합니다.
     var tracking = String(data && data.trackingNumber || '').replace(/[^0-9]/g, '');
+    // 3단계 손님 문자 (분리 배송지): 이 배송지 그룹에 송장번호가 새로
+    // 들어갈 때만 받는 분 전화로 보냅니다. 발송은 락을 풀고 난 뒤에 합니다.
+    var customerSms = [];
     var lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
@@ -676,17 +736,42 @@ function setSplitTracking(data) {
       var wanted = {};
       for (var i = 0; i < itemIds.length; i++) wanted[String(itemIds[i])] = true;
       var matched = 0;
+      // 전화번호별 새로 송장이 들어간 상품명 (같은 주소 그룹은 한 통으로 합침).
+      var notifyByPhone = {};
       for (var j = 0; j < overrides.length; j++) {
         if (wanted[overrides[j].itemId]) {
+          // 3단계: 이 상품에 송장번호가 새로 들어갈 때만 보냄.
+          // 이미 있던 번호를 다시 저장해도 재발송하지 않음.
+          var oldTracking = String(overrides[j].trackingNumber || '').trim();
+          if (!oldTracking && tracking) {
+            var ph = String(overrides[j].phone || '').trim();
+            if (ph) {
+              if (!notifyByPhone[ph]) notifyByPhone[ph] = [];
+              notifyByPhone[ph].push(
+                (overrides[j].itemName || overrides[j].itemId) + ' ' + (Number(overrides[j].qty) || 0) + '박스'
+              );
+            }
+          }
           overrides[j].trackingNumber = tracking;
           matched++;
         }
       }
       if (!matched) return respond({ ok: false, error: '해당 상품이 없습니다.' });
+      for (var ph2 in notifyByPhone) {
+        customerSms.push({
+          phone: ph2,
+          message: '[효돈농원] 출고되었습니다. ' + notifyByPhone[ph2].join(', ') +
+            ' 송장번호 ' + tracking + ', 로젠택배에서 조회할 수 있습니다. 내일·모레 도착합니다.'
+        });
+      }
       // O열(15): JSON 텍스트 — 따옴표·괄호가 수식이나 숫자로 바뀌지 않게 텍스트 형식으로 다시 씁니다.
       sheet.getRange(row, 15).setNumberFormat('@').setValue(JSON.stringify(overrides));
     } finally {
       lock.releaseLock();
+    }
+    // 락을 풀고 손님 문자를 보냅니다 (발송 실패가 저장을 막지 않음).
+    for (var s = 0; s < customerSms.length; s++) {
+      notifyCustomer_(customerSms[s].phone, customerSms[s].message);
     }
     return respond({ ok: true, row: row, itemIds: itemIds, trackingNumber: tracking });
   } catch (err) {
@@ -875,6 +960,16 @@ function bulkImportTracking(data) {
       }
     } finally {
       lock.releaseLock();
+    }
+    // 3단계 손님 문자 (일괄 입력): 새로 들어간 건만 해당 전화로 보냅니다.
+    // 'imported'만 대상 — 이미 있던 번호(already_tracked)는 재발송하지 않고,
+    // 못 찾았거나 모호한 건은 발송하지 않습니다. 발송 실패가 일괄 입력을
+    // 막지 않습니다 (notifyCustomer_가 try/catch로 감쌉니다).
+    for (var s = 0; s < results.length; s++) {
+      var r = results[s] || {};
+      if (r.status === 'imported' && r.phone && r.trackingNumber) {
+        notifyCustomer_(r.phone, customerShippedMessage_(String(r.trackingNumber)));
+      }
     }
     return respond({ ok: true, results: results, summary: summary });
   } catch (err) {
@@ -1960,6 +2055,82 @@ function notifyNewOrder_(data, productText) {
   }
 }
 
+/* ============================================================
+ *  손님용 문자 알림 3단계 (주문 접수·입금 확인·출고) — 전부 자동 발송
+ *  - 1단계: doPost에서 주문 저장 뒤 주문자 전화로 발송 (계좌 포함).
+ *  - 2단계: 입금 상태가 false→true로 바뀔 때만 주문자 전화로 발송.
+ *  - 3단계: 송장번호가 새로 들어갈 때만 받는 분 전화로 발송.
+ *  - '문자발송기록' 탭에 구분 '고객알림'으로 남깁니다 (성공/실패 모두).
+ *    홍보 하루 한도 계산(countTodaySent_은 '홍보'만 합산)에는 들어가지
+ *    않습니다. 문자 실패가 주문 접수·관리자 업데이트를 절대 막지 않게
+ *    모든 발송은 try/catch로 감싸고 실패는 로그만 남깁니다.
+ * ============================================================ */
+
+/** 2단계 문구 (입금 확인) */
+var CUSTOMER_PAID_MESSAGE = '[효돈농원] 입금이 확인되었습니다. 오늘 출고합니다. 내일·모레 도착합니다.';
+
+/** 3단계 문구 (출고) — tracking은 송장번호 */
+function customerShippedMessage_(tracking) {
+  return '[효돈농원] 출고되었습니다. 송장번호 ' + tracking + ', 로젠택배에서 조회할 수 있습니다. 내일·모레 도착합니다.';
+}
+
+/**
+ * 손님용 문자 1건을 보냅니다 (주문 접수·입금 확인·출고 알림 공용).
+ * sendSmsViaSmsGate_와 같은 게이트웨이로 보내고, '문자발송기록' 탭에
+ * 구분 '고객알림'으로 남깁니다 (성공/실패 모두). 절대 throw하지 않습니다 —
+ * 실패는 로그만 남기고 false를 반환합니다. 주문 접수나 관리자 업데이트가
+ * 문자 실패로 망가지면 안 됩니다. 성공하면 true를 반환합니다.
+ */
+function notifyCustomer_(phone, message) {
+  try {
+    if (!SMSGATE_USERNAME || !SMSGATE_PASSWORD) return false;
+    if (!phone || !message) return false;
+    var ok = false;
+    try { ok = sendSmsViaSmsGate_(phone, message); } catch (e) { ok = false; }
+    // 고객 알림도 '문자발송기록' 탭에 남깁니다 (구분 '고객알림').
+    // 기록 쓰기가 실패해도 주문 접수·관리자 업데이트와 문자 발송 결과에는
+    // 영향이 없습니다.
+    try {
+      var logSheet = getSmsLogSheet_();
+      logPromoSend_(logSheet, '고객알림', message, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [phone]);
+    } catch (logErr) {
+      Logger.log('notifyCustomer_ log failed: ' + logErr);
+    }
+    return ok;
+  } catch (err) {
+    Logger.log('notifyCustomer_ failed: ' + err);
+    return false;
+  }
+}
+
+/**
+ * 1단계 — 손님용 주문 접수 문자 (doPost에서 주문 저장 뒤 자동 발송).
+ * 메시지: 계좌 있으면 "[효돈농원] 주문이 접수되었습니다. {상품} {금액}원,
+ *   {은행} {계좌}({예금주})로 입금해주세요. 입금자명: {입금자명}"
+ *   계좌 없으면 "[효돈농원] 주문이 접수되었습니다. {상품} {금액}원,
+ *   입금 계좌는 농원에서 확인 후 문자로 안내드립니다. 입금자명: {입금자명}"
+ *   (계좌 없으면 홈페이지 완료 화면도 "문자로 안내"라 뜨므로, 홈페이지로
+ *   보내지 않고 같은 문구로 통일 — 순환 참조 방지, 2026-11-15)
+ * 주문자 전화로 보냅니다. 절대 throw하지 않습니다 (notifyCustomer_가 보장).
+ */
+function notifyCustomerOrder_(data, productText) {
+  try {
+    var amount = Number(data.totalAmount || 0).toLocaleString();
+    var bankInfo = getBankInfo_();
+    var message;
+    if (bankInfo) {
+      message = '[효돈농원] 주문이 접수되었습니다. ' + productText + ' ' + amount + '원, ' +
+        bankInfo.bank + ' ' + bankInfo.account + '(' + bankInfo.holder + ')로 입금해주세요. 입금자명: ' + data.depositor;
+    } else {
+      message = '[효돈농원] 주문이 접수되었습니다. ' + productText + ' ' + amount + '원, ' +
+        '입금 계좌는 농원에서 확인 후 문자로 안내드립니다. 입금자명: ' + data.depositor;
+    }
+    notifyCustomer_(data.ordererPhone, message);
+  } catch (err) {
+    Logger.log('notifyCustomerOrder_ failed: ' + err);
+  }
+}
+
 /**
  * 관리자 테스트용 (POST action=testSmsGate, 배포 2, checkAdmin 필수).
  * "[효돈농원] 문자 알림 테스트입니다."를 주문 알림 받는 번호(설정에 저장된
@@ -2037,6 +2208,81 @@ function getNotifyPhone_() {
   var saved = normalizeMobileDigits_(getSetting_('NOTIFY_PHONE'));
   if (saved && isValidMobileDigits_(saved)) return saved;
   return NOTIFY_PHONE;
+}
+
+/* ============================================================
+ *  입금 계좌 정보 (은행명·계좌번호·예금주) — 1단계 손님 문자와
+ *  홈페이지 결제 안내의 공통 진실 공급원
+ *  - '설정' 탭에 key BANK_NAME / BANK_ACCOUNT / BANK_HOLDER 로 저장합니다.
+ *  - 3개가 다 있어야 유효합니다. 하나라도 비면 null을 반환하고,
+ *    홈페이지와 1단계 손님 문자는 자리표 동작으로 떨어집니다.
+ * ============================================================ */
+
+/** '설정' 탭에서 입금 계좌 3종을 읽습니다. 하나라도 비면 null을 반환합니다. */
+function getBankInfo_() {
+  var bank = String(getSetting_('BANK_NAME') || '').trim();
+  var account = String(getSetting_('BANK_ACCOUNT') || '').trim();
+  var holder = String(getSetting_('BANK_HOLDER') || '').trim();
+  if (!bank || !account || !holder) return null;
+  return { bank: bank, account: account, holder: holder };
+}
+
+/** 입금 계좌 공개 조회 (D1, 인증 없음) — 홈페이지 결제 안내용.
+ *  계좌 3종이 다 있으면 {ok:true, bank, account, holder}를,
+ *  아니면 {ok:false}를 반환합니다. */
+function bankInfoGet() {
+  try {
+    var info = getBankInfo_();
+    if (!info) return respond({ ok: false, error: '계좌 정보가 아직 없습니다.' });
+    return respond({ ok: true, bank: info.bank, account: info.account, holder: info.holder });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/** 입금 계좌 조회 (D2, checkAdmin) — 관리자 표시용.
+ *  반환: {ok, bank, account, holder, saved} */
+function getBankInfo(data) {
+  try {
+    checkAdmin(data && data.key);
+    var info = getBankInfo_();
+    return respond({
+      ok: true,
+      bank: info ? info.bank : '',
+      account: info ? info.account : '',
+      holder: info ? info.holder : '',
+      saved: !!info
+    });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 입금 계좌 저장 (D2, checkAdmin)
+ * body: { action: 'setBankInfo', key: 관리자 키, bank, account, holder }
+ * 계좌번호는 숫자와 하이픈(-)만 허용합니다. 3개 모두 비어 있지 않아야 합니다.
+ * 반환: {ok, bank, account, holder}
+ */
+function setBankInfo(data) {
+  try {
+    checkAdmin(data && data.key);
+    var bank = String((data && data.bank) || '').trim();
+    var account = String((data && data.account) || '').trim();
+    var holder = String((data && data.holder) || '').trim();
+    if (!bank) return respond({ ok: false, error: '은행명을 입력하세요.' });
+    if (!account) return respond({ ok: false, error: '계좌번호를 입력하세요.' });
+    if (!/^[0-9-]+$/.test(account)) {
+      return respond({ ok: false, error: '계좌번호는 숫자와 하이픈(-)만 입력하세요.' });
+    }
+    if (!holder) return respond({ ok: false, error: '예금주를 입력하세요.' });
+    setSetting_('BANK_NAME', bank);
+    setSetting_('BANK_ACCOUNT', account);
+    setSetting_('BANK_HOLDER', holder);
+    return respond({ ok: true, bank: bank, account: account, holder: holder });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
 }
 
 /* ============================================================
