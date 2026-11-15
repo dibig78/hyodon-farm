@@ -1,0 +1,1 @@
+import{p as e}from"./config-Cwh2-s6c.js";import{a as t}from"./focusOutline.stylex-B7ZIy5_U.js";var n=t();function r({content:t,children:r}){return(0,n.jsx)(e,{content:t,placement:`above`,focusTrigger:`always`,children:r})}export{r as default};
