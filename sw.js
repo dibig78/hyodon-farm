@@ -15,6 +15,7 @@ const PRECACHE_URLS = [
   'track.html',
   'directions.html',
   'inquiry.html',
+  'gallery.html',
   'manifest.webmanifest',
   'icon-192.png',
   'icon-512.png',
