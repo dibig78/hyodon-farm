@@ -2474,7 +2474,7 @@ function countRecentPhoneVerifyRequests_(sheet, phone, now) {
     if (!created) continue;
     if (now.getTime() - created.getTime() > 3600000) continue;
     global++;
-    if (String(rows[i][0] || '').replace(/[^0-9]/g, '') === phone) perPhone++;
+    if (normalizeMobileDigits_(String(rows[i][0] || '')) === phone) perPhone++;
   }
   return { perPhone: perPhone, global: global };
 }
@@ -2511,7 +2511,7 @@ function requestPhoneCode(data) {
       }
       var targetRow = sheet.getLastRow() + 1;
       sheet.getRange(targetRow, 1, 1, 3).setNumberFormat('@');
-      sheet.appendRow([phone, code, '', created, expires, 0, 'FALSE', 'FALSE']);
+      sheet.getRange(targetRow, 1, 1, PHONE_VERIFY_HEADERS.length).setValues([[phone, code, '', created, expires, 0, 'FALSE', 'FALSE']]);
     } finally {
       lock.releaseLock();
     }
@@ -2563,7 +2563,7 @@ function verifyPhoneCode(data) {
       var idx = -1;
       for (var i = rows.length - 1; i >= 0; i--) {
         var r = rows[i];
-        if (String(r[0] || '').replace(/[^0-9]/g, '') !== phone) continue;
+        if (normalizeMobileDigits_(String(r[0] || '')) !== phone) continue;
         if (String(r[6] || '').trim().toUpperCase() === 'TRUE') continue;
         var exp = parseStamp_(r[4]);
         if (!exp || exp.getTime() <= now.getTime()) continue;
@@ -2650,7 +2650,7 @@ function consumePhoneVerifyToken_(phone, token) {
       var now = new Date();
       for (var i = rows.length - 1; i >= 0; i--) {
         var r = rows[i];
-        if (String(r[0] || '').replace(/[^0-9]/g, '') !== phone) continue;
+        if (normalizeMobileDigits_(String(r[0] || '')) !== phone) continue;
         if (String(r[2] || '').trim() !== String(token).trim()) continue;
         if (String(r[6] || '').trim().toUpperCase() !== 'TRUE') continue;
         if (String(r[7] || '').trim().toUpperCase() === 'TRUE') continue;
@@ -2664,7 +2664,6 @@ function consumePhoneVerifyToken_(phone, token) {
       lock.releaseLock();
     }
   } catch (err) {
-    Logger.log('consumePhoneVerifyToken_ failed: ' + err);
     return false;
   }
 }
