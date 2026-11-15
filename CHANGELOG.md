@@ -6,7 +6,7 @@
 - 모바일 메뉴 5개 항목 대응: 행을 가로 스크롤 가능하게 변경 (`overflow-x: auto`, 스크롤바 숨김, 13px·간격 유지). 열린 직후 보이는 건 앞쪽 항목이고 "오시는 길"은 오른쪽으로 밀어 봐야 함. `justify-content`를 flex-end에서 flex-start로 바꿈 — flex-end + overflow는 왼쪽으로 넘친 항목이 스크롤로도 닿지 않기 때문.
 - 부수 수정: 네비 클릭 시 섹션 제목이 스티키 헤더 뒤에 가려지던 문제 수정 — `div[id] { scroll-margin-top: 4.5rem; }` (Astryx Section은 `<div>`로 렌더됨). 사이트 전체 섹션에 동일 적용.
 - 검증: 빌드 성공, doctor pass 20 / warn 2(기존) / fail 0, Playwright 33/33 (데스크톱 1280px 네비 5개·섹션 내용·링크 href·iframe src·클릭 이동, 모바일 390px·360px 한 줄·브랜드 침범 없음·스크롤 가능·클릭 시 메뉴 닫힘·이동), 스크린샷 직접 판독 (`docs/directions-2026-11-15/shots/`). 단, 지도 embed의 실제 타일 렌더는 샌드박스 외부 네트워크 차단으로 눈으로 확인 못 함 (iframe src 검증 + embed URL 응답 301 정상으로 대체 확인).
-- 라이브 확인: (푸시 후 번들 지문 대조로 확인 — 아래 커밋 시 기록)
+- 라이브 확인: 완료 (2026-11-15 12:57 KST, 커밋 fa665d5) — 라이브 index.html이 새 번들 `main-2Vm7jOPi.js`·`pwa-Dz3wO1V4.css`를 참조하고, 라이브 main 번들에 "오시는 길"·"directions" 포함, 라이브 pwa 청크에 구글 지도 URL 포함 확인 (로컬 dist와 일치).
 
 ## 2026-11-14 — 사진 업데이트 · 상품 관리 · 문자 알림 · 갤러리 · 디자인 수정
 
