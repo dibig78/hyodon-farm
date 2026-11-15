@@ -1,5 +1,12 @@
 # 변경 내역 (효돈농원 직거래 주문 페이지)
 
+## 2026-11-15 — 홈 화면 진입용 런치 스플래시 추가
+
+- 홈 화면 아이콘을 눌러 들어갈 때 오렌지 바탕 중앙에 효돈농원 아이콘이 뜬 뒤 홈페이지로 들어감. 두 겹으로 구성: ① iOS 네이티브 시작 이미지(`apple-touch-startup-image`, `public/launch/` 9종 — PIL 생성, 바탕 #d9551f, 중앙에 icon-512.png 너비 1/3) — 5개 HTML 페이지 전부 연결, ② 인앱 오버레이(`src/components/LaunchSplash.tsx`, `main-index`·`main-directions`·`main-inquiry`에만 마운트 — admin/track에는 없음): standalone 실행 시에만 900ms 표시 후 400ms 페이드아웃·언마운트, 일반 브라우저 탭에서는 안 뜸, `prefers-reduced-motion`이면 즉시 숨김, `pointer-events: none`이라 상호작용을 막지 않음.
+- 매니페스트 `background_color`를 `#fdf8f1` → `#d9551f`로 변경 (theme_color는 이미 #d9551f라 그대로).
+- 검증: 빌드 성공, doctor pass 20 / warn 2(기존) / fail 0, Playwright **46/46** (매니페스트 색상·5개 페이지 시작 이미지 링크 9개·미디어 쿼리·스플래시 청크가 main·directions·inquiry에만 있음 / standalone 스텁: 배경 rgb(217,85,31)·아이콘 144x144·전체 화면 커버·페이드 후 언마운트·히어로 표시·네비 클릭 이동 / 일반 모드·admin 미표시 / 모바일 390px 아이콘 중앙·reduced-motion 즉시 숨김·시작 이미지 200), 스크린샷 직접 판독 (`docs/launch-splash-2026-11-15/shots/` — 데스크톱·모바일 모두 오렌지 바탕 + 흰 '효돈/농원' 중앙 확인, 생성 PNG도 직접 판독). 단, 실제 아이폰에서의 네이티브 스플래시 렌더는 샌드박스에서 확인 불가 — 폰에서 홈 화면 아이콘을 눌러봐야 확정. 기존 홈 화면 바로가기는 지웠다가 다시 추가해야 새 시작 이미지가 적용될 수 있음.
+- 라이브 확인: (배포 후 기록 예정, 커밋 1b423dd)
+
 ## 2026-11-15 — 오시는 길·고객 문의를 별도 페이지로 분리
 
 - `directions.html` + `inquiry.html` 신설 (기존 admin/track 멀티페이지 패턴 그대로 — `vite.config.ts` rollupOptions input, 각 페이지 엔트리 `src/main-directions.tsx` / `src/main-inquiry.tsx`).
