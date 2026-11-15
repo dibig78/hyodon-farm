@@ -205,6 +205,12 @@ function doPost(e) {
     if (data.action === 'requestPhoneCode') return requestPhoneCode(data);
     if (data.action === 'verifyPhoneCode') return verifyPhoneCode(data);
 
+    // 고객 문의 접수 (홈페이지 문의 폼에서 호출, 배포 1 공개 — 인증 없음)
+    if (data.action === 'submitInquiry') return submitInquiry(data);
+    // 고객 문의 목록·답변 (admin.html 문의 메뉴에서 호출, 배포 2 관리자 전용)
+    if (data.action === 'listInquiries') return listInquiries(data);
+    if (data.action === 'replyInquiry') return replyInquiry(data);
+
     // 필수값 확인 (홈페이지에서도 검사하지만 마지막으로 한 번 더)
     var missing = [];
     if (!data.ordererName) missing.push('주문자');
@@ -345,6 +351,8 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'bankInfo') return bankInfoGet();
   // 전화번호 인증 켜짐 여부 조회 (index.html 주문 폼에서 ?action=phoneVerifyStatus 로 호출, 키 없음)
   if (e && e.parameter && e.parameter.action === 'phoneVerifyStatus') return phoneVerifyStatus();
+  // 고객 문의 목록 조회 (admin.html 문의 메뉴에서 ?action=inquiries 로 호출, 키 확인)
+  if (e && e.parameter && e.parameter.action === 'inquiries') return listInquiries({ key: e.parameter.key });
   // 상품 전체 목록 조회 (admin.html 상품 관리에서 호출, 키 확인)
   if (e && e.parameter && e.parameter.action === 'productsAll') return productsAll(e.parameter.key);
   var status = 'ok';
@@ -2662,6 +2670,215 @@ function consumePhoneVerifyToken_(phone, token) {
 }
 
 /* ============================================================
+ *  고객 문의 (비공개) — 2026-11-15
+ *  - 손님은 홈페이지 문의 폼에서 이름·연락처·문의만 남깁니다 (목록은
+ *    손님에게 보이지 않음). 답은 문자로 따로 받습니다.
+ *  - '문의' 탭: 문의일시 | 이름 | 연락처 | 문의내용 | 답변 | 답변일시 | 상태.
+ *  - submitInquiry (D1 공개): 속도 제한 — 같은 전화로 60분 내 3건.
+ *    저장 뒤 사장님 알림 문자 (구분 '문의알림', notifyNewOrder_ 패턴).
+ *  - listInquiries / replyInquiry (D2, checkAdmin): 목록(최신순)·답변.
+ *    답변은 손님 전화로 문자 발송 (구분 '고객알림', notifyCustomer_ 패턴).
+ *    문자 실패해도 행 저장은 유지합니다.
+ * ============================================================ */
+var INQUIRY_SHEET_NAME = '문의';
+var INQUIRY_HEADERS = ['문의일시', '이름', '연락처', '문의내용', '답변', '답변일시', '상태'];
+/** 같은 전화로 60분 안에 접수할 수 있는 최대 문의 건수. */
+var INQUIRY_PER_PHONE_HOURLY = 3;
+/** 문의·답변 최대 글자 수. */
+var INQUIRY_MESSAGE_MAX = 500;
+/** 속도 제한 검사 때 시트 끝에서 읽는 최대 행 수. */
+var INQUIRY_RECENT_ROWS = 200;
+
+function getInquirySheet_(create) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(INQUIRY_SHEET_NAME);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(INQUIRY_SHEET_NAME);
+    sheet.getRange(1, 1, 1, INQUIRY_HEADERS.length).setValues([INQUIRY_HEADERS]);
+    sheet.setFrozenRows(1);
+    // 연락처(C)·문의내용(D) 열은 텍스트 형식으로 — 앞자리 0(연락처)과
+    // '=·+·-·@'로 시작하는 문장(문의내용)이 숫자·수식으로 바뀌지 않게,
+    // 만들 때 미리 잡습니다.
+    sheet.getRange(2, 3, Math.max(1, sheet.getMaxRows() - 1), 2).setNumberFormat('@');
+  }
+  return sheet;
+}
+
+/** 최근 60분의 해당 번호 문의 건수를 셉니다 (속도 제한용).
+ *  시트 끝에서 최근 행만 읽습니다 — 시간당 상한이 3건이라 200행이면 충분합니다. */
+function countRecentInquiriesByPhone_(sheet, phone, now) {
+  var count = 0;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var take = Math.min(lastRow - 1, INQUIRY_RECENT_ROWS);
+  var rows = sheet.getRange(lastRow - take + 1, 1, take, INQUIRY_HEADERS.length).getDisplayValues();
+  for (var i = 0; i < rows.length; i++) {
+    var created = parseStamp_(rows[i][0]);
+    if (!created) continue;
+    if (now.getTime() - created.getTime() > 3600000) continue;
+    if (String(rows[i][2] || '').replace(/[^0-9]/g, '') === phone) count++;
+  }
+  return count;
+}
+
+/**
+ * 새 문의가 들어오면 농원에 문자 1건을 보냅니다.
+ * 메시지 예시:
+ *   [효돈농원] 새 문의: 홍길동 010-1234-5678 — 귤이 언제쯤…
+ * 실패해도 문의 접수는 절대 막지 않습니다 (내부 try/catch).
+ * 보낸 결과는 '문자발송기록' 탭에 구분 '문의알림'으로 남겨 관리자 페이지의
+ * 문자 전송 모니터링에 표시합니다. 홍보 하루 한도 계산(countTodaySent_은
+ * '홍보'만 합산)에는 들어가지 않습니다.
+ */
+function notifyNewInquiry_(name, phone, message) {
+  try {
+    if (!SMSGATE_USERNAME || !SMSGATE_PASSWORD) return;
+    var preview = String(message || '');
+    if (preview.length > 30) preview = preview.slice(0, 30) + '…';
+    var text = '[효돈농원] 새 문의: ' + name + ' ' + phone + ' — ' + preview;
+    var notifyPhone = getNotifyPhone_();
+    var ok = false;
+    try { ok = sendSmsViaSmsGate_(notifyPhone, text); } catch (e) { ok = false; }
+    try {
+      var logSheet = getSmsLogSheet_();
+      logPromoSend_(logSheet, '문의알림', text, 1, ok ? 1 : 0, ok ? 0 : 1, ok ? [] : [notifyPhone]);
+    } catch (logErr) {
+      Logger.log('notifyNewInquiry_ log failed: ' + logErr);
+    }
+  } catch (err) {
+    Logger.log('notifyNewInquiry_ failed: ' + err);
+  }
+}
+
+/**
+ * 고객 문의 접수 (D1, 공개 — checkAdmin 없음).
+ * body: { action: 'submitInquiry', name, phone, message }
+ * 이름 1~20자 · 전화 한국 휴대폰 10~11자리 · 문의 1~500자 검증 →
+ * 같은 전화 60분 내 3건 제한 → 행 저장 → 사장님 알림 문자.
+ * 성공 {ok:true}, 실패 {ok:false, error}. 절대 throw하지 않습니다.
+ */
+function submitInquiry(data) {
+  try {
+    var name = String((data && data.name) || '').trim();
+    if (!name || name.length > 20) {
+      return respond({ ok: false, error: '이름을 1~20자로 입력해 주세요.' });
+    }
+    var phone = normalizeMobileDigits_(data && data.phone);
+    if (!isValidMobileDigits_(phone)) {
+      return respond({ ok: false, error: '연락 가능한 휴대폰 번호를 정확히 입력해 주세요.' });
+    }
+    var message = String((data && data.message) || '').trim();
+    if (!message || message.length > INQUIRY_MESSAGE_MAX) {
+      return respond({ ok: false, error: '문의 내용을 1~500자로 입력해 주세요.' });
+    }
+    var now = new Date();
+    var stamp = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    // 속도 제한 검사와 행 저장은 락 안에서 — 동시에 두 문의가 들어와도
+    // 상한을 넘기지 않게. 알림 문자는 락 해제 뒤에 보냅니다.
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      var sheet = getInquirySheet_(true);
+      var recent = countRecentInquiriesByPhone_(sheet, phone, now);
+      if (recent >= INQUIRY_PER_PHONE_HOURLY) {
+        return respond({ ok: false, error: '문의는 시간당 3건까지만 접수할 수 있습니다. 잠시 후 다시 남겨주세요.' });
+      }
+      var targetRow = sheet.getLastRow() + 1;
+      sheet.getRange(targetRow, 3, 1, 2).setNumberFormat('@');
+      sheet.appendRow([stamp, safe(name), phone, safe(message), '', '', '대기']);
+    } finally {
+      lock.releaseLock();
+    }
+    notifyNewInquiry_(name, phone, message);
+    return respond({ ok: true });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 고객 문의 목록 조회 (D2, checkAdmin — GET/POST 공용).
+ * data: { key: 관리자 키 }. 최신순으로 돌려줍니다.
+ * 반환: {ok:true, inquiries:[{row, datetime, name, phone, message, reply, repliedAt, status}]}.
+ */
+function listInquiries(data) {
+  try {
+    checkAdmin(data && data.key);
+    var sheet = getInquirySheet_(false);
+    if (!sheet || sheet.getLastRow() < 2) return respond({ ok: true, inquiries: [] });
+    var lastRow = sheet.getLastRow();
+    var rows = sheet.getRange(2, 1, lastRow - 1, INQUIRY_HEADERS.length).getDisplayValues();
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      out.push({
+        row: i + 2,
+        datetime: String(r[0] || ''),
+        name: String(r[1] || ''),
+        phone: String(r[2] || ''),
+        message: String(r[3] || ''),
+        reply: String(r[4] || ''),
+        repliedAt: String(r[5] || ''),
+        status: String(r[6] || '') === '답변완료' ? '답변완료' : '대기'
+      });
+    }
+    out.reverse();
+    return respond({ ok: true, inquiries: out });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/**
+ * 고객 문의 답변 (D2, checkAdmin).
+ * body: { action: 'replyInquiry', key: 관리자 키, row, reply }
+ * reply 1~500자. 해당 행에 답변·답변일시·상태='답변완료'를 저장하고
+ * (락 안에서), 락 해제 뒤 손님 전화로 답변 문자를 보냅니다.
+ * 메시지: "[효돈농원] 문의 답변: {답변}".
+ * 문자 실패해도 행 저장은 유지합니다. 반환 {ok:true, smsOk}.
+ * 재답변 가능 — 답변을 고치면 다시 저장하고 다시 발송합니다.
+ */
+function replyInquiry(data) {
+  try {
+    checkAdmin(data && data.key);
+    var reply = String((data && data.reply) || '').trim();
+    if (!reply || reply.length > INQUIRY_MESSAGE_MAX) {
+      return respond({ ok: false, error: '답변을 1~500자로 입력해 주세요.' });
+    }
+    var row = Number(data && data.row);
+    if (!isFinite(row) || row !== Math.floor(row) || row < 2) {
+      return respond({ ok: false, error: '문의 행을 찾을 수 없습니다.' });
+    }
+    var sheet = getInquirySheet_(false);
+    if (!sheet || row > sheet.getLastRow()) {
+      return respond({ ok: false, error: '문의 행을 찾을 수 없습니다.' });
+    }
+    var now = new Date();
+    var stamp = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    var phone = '';
+    var lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      phone = String(sheet.getRange(row, 3).getDisplayValue() || '').replace(/[^0-9]/g, '');
+      if (!isValidMobileDigits_(phone)) {
+        return respond({ ok: false, error: '문의하신 분의 연락처가 올바르지 않습니다.' });
+      }
+      sheet.getRange(row, 5).setValue(safe(reply));
+      sheet.getRange(row, 6).setValue(stamp);
+      sheet.getRange(row, 7).setValue('답변완료');
+    } finally {
+      lock.releaseLock();
+    }
+    // 답변 문자는 손님에게 가는 알림이라 구분 '고객알림'으로 기록합니다.
+    // 실패해도 저장된 답변은 그대로 두고, 발송 결과만 돌려줍니다.
+    var smsOk = notifyCustomer_(phone, '[효돈농원] 문의 답변: ' + reply);
+    return respond({ ok: true, smsOk: !!smsOk });
+  } catch (err) {
+    return respond({ ok: false, error: String(err) });
+  }
+}
+
+/* ============================================================
  *  홍보 문자 발송 (SMS Gateway for Android, 클라우드 모드)
  *  - 대량 발송은 즉시 보내지 않습니다. 관리자가 예약하면 '문자발송큐'
  *    탭에 상태 '대기'로 한 행씩 저장하고, 15분마다 실행되는 시간
@@ -4046,4 +4263,389 @@ function formatSheet() {
   sheet.getRange(2, 4, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('#,##0');
   sheet.getRange(2, 14, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@'); // 우편번호 앞자리 0 유지
   sheet.getRange(2, 15, Math.max(1, sheet.getMaxRows() - 1), 1).setNumberFormat('@'); // 상품별 배송지 JSON 텍스트 형식 유지
+}
+
+/* ============================================================
+ *  스프레드시트 시스템화 — polishSheets_()
+ *  (2026-11-15, 편집기에서 직접 실행하는 1회성 정리 도구)
+ *  주문 접수 시트 + 귤 배송 명단에 드롭다운·조건부 서식·대시보드/
+ *  요약 탭을 붙이고, 배송 명단의 날짜 구분 행을 날짜 열로 정규화한다.
+ *  - 실행 전 두 시트 모두 백업 탭을 먼저 만든다 (최초 1회만).
+ *  - 재실행 안전: 이미 있는 것은 감지해 건너뛰거나 보완만 한다.
+ *  - 수량은 건드리지 않는다 ('1 / 1'·'5x2=2' 같은 메모성 표기가 섞여
+ *    있어 숫자화가 위험).
+ *  - B열(상품명) 드롭다운은 두지 않는다 (2026-11-15 검토 결정).
+ *    백엔드가 B열에 "상품명 N박스" 요약(예: 노지감귤 가정용 10kg 1박스)을
+ *    쓰기 때문에, 순수 상품명만 허용하는 엄격 모드면 새 주문 저장이
+ *    거부되고 경고 모드면 모든 주문 행에 경고 표시가 뜬다.
+ * ============================================================ */
+
+/** 귤 배송 명단 스프레드시트 ID (소유자 dibig78 본인). */
+var DELIVERY_SHEET_ID = '1CVzN0f4diDlpEVCcW70S3-SN14sepNpIT3Cq6lx6ar8';
+/** 배송 명단 원본 탭 이름. */
+var DELIVERY_SHEET_NAME = '시트1';
+/** 백업 탭 이름 날짜 접미사 (실행일 기준). */
+var POLISH_BACKUP_DATE = '20261115';
+/** 주문 시트 드롭다운·조건부 서식 적용 범위 끝 행. */
+var POLISH_ORDER_ROWS = 1000;
+/** 대시보드·요약 수식 참조 범위 끝 행 (헤더 제외, 넉넉하게). */
+var POLISH_FORMULA_ROWS = 10000;
+
+/** 두 시트를 한 번에 다듬는다. 편집기에서 직접 실행한다.
+ *  반환값: { ok, orders: {...}, delivery: {...} } 요약. */
+function polishSheets_() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var summary = { ok: true, orders: polishOrdersSheet_(), delivery: polishDeliverySheet_() };
+    Logger.log('polishSheets_ done: ' + JSON.stringify(summary));
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 탭을 복제해 백업 탭을 만든다. 이미 있으면 건너뛴다 (최초 1회만). */
+function polishBackupTab_(ss, tabName, backupName) {
+  var existing = ss.getSheetByName(backupName);
+  if (existing) {
+    Logger.log('polish backup exists, skip: ' + backupName);
+    return { created: false, name: backupName };
+  }
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet) {
+    Logger.log('polish backup failed, tab not found: ' + tabName);
+    return { created: false, name: backupName, error: 'tab not found: ' + tabName };
+  }
+  var copy = sheet.copyTo(ss);
+  copy.setName(backupName);
+  ss.setActiveSheet(copy);
+  ss.moveActiveSheet(ss.getNumSheets());
+  Logger.log('polish backup created: ' + backupName);
+  return { created: true, name: backupName };
+}
+
+/** 조건부 서식 수식 비교용 — 앞의 '=' 유무를 무시한다. */
+function polishNormFormula_(f) {
+  var s = String(f || '').trim();
+  return s.charAt(0) === '=' ? s.substring(1) : s;
+}
+
+/** 조건부 서식 규칙을 찾아 수식·범위·배경색을 교체한다.
+ *  specs: [{ formula, matchFormulas, background, range }]
+ *  - matchFormulas에 들어 있는 수식과 일치하는 기존 규칙은 교체한다.
+ *  - 일치하는 규칙이 없으면 새로 추가한다. 그 외 규칙은 그대로 둔다.
+ *  (규칙 객체는 변경 불가라, 교체는 같은 위치에 새 규칙을 만드는 방식이다.) */
+function polishUpsertConditionalRules_(sheet, specs) {
+  var rules = sheet.getConditionalFormatRules();
+  var found = {};
+  var out = rules.map(function (rule) {
+    var cond = rule.getBooleanCondition();
+    if (!cond) return rule;
+    if (cond.getCriteriaType() !== SpreadsheetApp.BooleanCriteria.CUSTOM_FORMULA) return rule;
+    var vals = cond.getCriteriaValues();
+    var formula = polishNormFormula_(vals && vals[0]);
+    for (var i = 0; i < specs.length; i++) {
+      var spec = specs[i];
+      var matches = spec.matchFormulas || [spec.formula];
+      var matched = false;
+      for (var j = 0; j < matches.length; j++) {
+        if (polishNormFormula_(matches[j]) === formula) { matched = true; break; }
+      }
+      if (matched) {
+        found[spec.formula] = true;
+        return SpreadsheetApp.newConditionalFormatRule()
+          .whenFormulaSatisfied(spec.formula)
+          .setBackground(spec.background)
+          .setRanges([spec.range])
+          .build();
+      }
+    }
+    return rule;
+  });
+  specs.forEach(function (spec) {
+    if (!found[spec.formula]) {
+      out.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(spec.formula)
+        .setBackground(spec.background)
+        .setRanges([spec.range])
+        .build());
+    }
+  });
+  sheet.setConditionalFormatRules(out);
+  return found;
+}
+
+/** 주문 접수 시트 다듬기. 반환값은 적용 결과 요약. */
+function polishOrdersSheet_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var res = { backup: null, paidDropdown: false, productDropdown: false, productNames: [], rules: {}, dashboard: false };
+  // 1. 백업 (최초 1회만).
+  res.backup = polishBackupTab_(ss, SHEET_NAME, '백업_Sheet1_' + POLISH_BACKUP_DATE);
+  var sheet = getSheet();
+  ensureHeader(sheet);
+  var lastRow = POLISH_ORDER_ROWS;
+  // 2. 입금확인 드롭다운 (L2:L1000) — 엄격 모드.
+  //    백엔드는 '확인'만 입금으로 판정하고 빈칸은 검증 대상이 아니라서,
+  //    기존 값·백엔드 쓰기 모두 그대로 동작한다.
+  var paidRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['확인', '미입금'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 12, lastRow - 1, 1).setDataValidation(paidRule);
+  res.paidDropdown = true;
+  // 3. 조건부 서식 통합 — '미입금'도 주황, 범위를 N·O열까지 확장.
+  var range = sheet.getRange(2, 1, lastRow - 1, 15); // A2:O1000
+  res.rules = polishUpsertConditionalRules_(sheet, [
+    { formula: '=AND($A2<>"",$L2<>"확인")',
+      matchFormulas: ['=AND($A2<>"",$L2="")', '=AND($A2<>"",$L2<>"확인")'],
+      background: '#fde8e0', range: range },
+    { formula: '=AND($A2<>"",$L2="확인")', background: '#e6f4ea', range: range }
+  ]);
+  // 4. 상품명 드롭다운은 두지 않는다 (2026-11-15 검토 결정).
+  //    백엔드가 B열에 "상품명 N박스" 요약(예: 노지감귤 가정용 10kg 1박스)을
+  //    쓰는데, 순수 상품명만 허용하는 엄격 모드면 새 주문 저장이 거부되고
+  //    경고 모드면 모든 주문 행에 경고 표시가 뜬다. B열은 백엔드 전용이라
+  //    드롭다운이 필요 없다.
+  res.productDropdown = false;
+  // 5. 새 탭 '대시보드' (없으면 생성, 있으면 내용 갱신). 첫 번째 위치로 이동.
+  var FR = POLISH_FORMULA_ROWS;
+  var T = SHEET_NAME;
+  var dashName = '대시보드';
+  var dash = ss.getSheetByName(dashName);
+  if (!dash) {
+    dash = ss.insertSheet(dashName);
+  }
+  dash.clear();
+  var rows = [
+    ['항목', '값'],
+    ['오늘 주문 수', '=COUNTIFS(' + T + '!A2:A' + FR + ',">="&TODAY(),' + T + '!A2:A' + FR + ',"<"&TODAY()+1)'],
+    ['오늘 매출', '=SUMIFS(' + T + '!D2:D' + FR + ',' + T + '!A2:A' + FR + ',">="&TODAY(),' + T + '!A2:A' + FR + ',"<"&TODAY()+1)'],
+    ['미입금 건수', '=COUNTIFS(' + T + '!A2:A' + FR + ',"<>",' + T + '!L2:L' + FR + ',"<>확인")'],
+    ['미입금 금액', '=SUMIFS(' + T + '!D2:D' + FR + ',' + T + '!A2:A' + FR + ',"<>",' + T + '!L2:L' + FR + ',"<>확인")'],
+    ['출고 대기 (입금됨·송장없음)', '=COUNTIFS(' + T + '!A2:A' + FR + ',"<>",' + T + '!L2:L' + FR + ',"확인",' + T + '!M2:M' + FR + ',"")'],
+    ['전체 주문 수', '=COUNTA(' + T + '!A2:A' + FR + ')'],
+    ['전체 매출', '=SUM(' + T + '!D2:D' + FR + ')'],
+    ['기준: ' + T + ' 주문 탭. 입금확인은 "확인"만 입금으로 봅니다.', '']
+  ];
+  dash.getRange(1, 1, rows.length, 2).setValues(rows);
+  dash.getRange(1, 1, 1, 2).setFontWeight('bold');
+  dash.getRange(3, 2).setNumberFormat('#,##0원'); // 오늘 매출
+  dash.getRange(5, 2).setNumberFormat('#,##0원'); // 미입금 금액
+  dash.getRange(8, 2).setNumberFormat('#,##0원'); // 전체 매출
+  dash.setFrozenRows(1);
+  dash.setColumnWidth(1, 260);
+  dash.setColumnWidth(2, 160);
+  ss.setActiveSheet(dash);
+  ss.moveActiveSheet(1);
+  res.dashboard = true;
+  Logger.log('polishOrdersSheet_: ' + JSON.stringify(res));
+  return res;
+}
+
+/** 배송 명단 상태 판정 — G '발송 제외' > '중복' > D '취소' > '정상'. 원본은 안 건든다. */
+function polishDeliveryStatus_(productName, ocrNote) {
+  var d = String(productName || '');
+  var g = String(ocrNote || '');
+  if (g.indexOf('발송 제외') !== -1) return '발송 제외';
+  if (d.indexOf('중복') !== -1 || g.indexOf('중복') !== -1) return '중복';
+  if (d.indexOf('취소') !== -1) return '취소';
+  return '정상';
+}
+
+/** 구분 행 C열 '10/20(2)'·'11/13 (2)'에서 월/일을 뽑아 2026년 날짜로 만든다. 못 읽으면 null. */
+function polishDeliveryDate_(label) {
+  var s = String(label || '').trim();
+  var m = s.match(/(\d{1,2})\/(\d{1,2})/);
+  if (!m) return null;
+  var month = Number(m[1]);
+  var day = Number(m[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  var d = new Date(2026, month - 1, day);
+  if (d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return d;
+}
+
+/** 귤 배송 명단 다듬기. 반환값은 적용 결과 요약. */
+function polishDeliverySheet_() {
+  var ss = SpreadsheetApp.openById(DELIVERY_SHEET_ID);
+  var res = {
+    backup: null, separatorsFound: 0, separatorsDeleted: 0, separatorsSkipped: [],
+    items: 0, datesFilled: 0, statusFilled: 0, statusCounts: {},
+    expandedQuotes: 0, cellsChanged: 0, summary: false
+  };
+  // 1. 백업 (최초 1회만).
+  res.backup = polishBackupTab_(ss, DELIVERY_SHEET_NAME, '백업_' + POLISH_BACKUP_DATE);
+  var sheet = ss.getSheetByName(DELIVERY_SHEET_NAME);
+  if (!sheet) { res.error = 'tab not found: ' + DELIVERY_SHEET_NAME; return res; }
+  var lastRow = sheet.getLastRow();
+  var lastCol = Math.max(9, sheet.getLastColumn());
+  if (lastRow < 2) { res.error = 'no data rows'; return res; }
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues(); // [0] = 헤더
+  // 2. 위→아래 스캔: 구분 행은 날짜를 기록하고 삭제 대상으로, 항목 행은 정리한다.
+  //    ' 전개는 바로 윗 *항목* 기준 (구분 행은 건너뛴다 — 구분 행의 D·E·F는 비어 있다).
+  var currentDate = null;
+  var toDelete = []; // 시트 행 번호 (1-based)
+  var items = [];    // { date, status, row: [A..G 정리된 값], changed, hOrig, iOrig, hBlank, iBlank }
+  var prev = [null, null, null]; // D·E·F 바로 윗 항목의 전개된 값
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    var g = String(row[6] == null ? '' : row[6]).trim();
+    if (g === '날짜·페이지 구분선') {
+      res.separatorsFound++;
+      var d = polishDeliveryDate_(row[2]);
+      if (d) {
+        currentDate = d;
+        toDelete.push(r + 1); // 시트 행 번호
+      } else {
+        // 날짜를 못 읽으면 삭제하지 않고 남긴다 (데이터 보호).
+        res.separatorsSkipped.push(r + 1);
+        Logger.log('polish delivery: separator without a readable date, kept, row ' + (r + 1) + ', C=' + JSON.stringify(row[2]));
+      }
+      continue;
+    }
+    // 항목 행: A~G trim + D·E·F ' 전개.
+    var cleaned = [];
+    var changed = false;
+    var cellsChanged = 0;
+    for (var c = 0; c < 7; c++) {
+      var v = row[c];
+      if (typeof v === 'string') {
+        var t = v.trim();
+        if (t !== v) { changed = true; cellsChanged++; }
+        v = t;
+      }
+      cleaned.push(v);
+    }
+    var expanded = 0;
+    for (var k = 0; k < 3; k++) {
+      var col = 3 + k;
+      if (cleaned[col] === "'") {
+        if (prev[k] !== null && prev[k] !== undefined) {
+          cleaned[col] = prev[k];
+          expanded++;
+          changed = true;
+          cellsChanged++;
+        }
+        // 윗 항목이 없으면 ' 그대로 둔다.
+      }
+      // '가 그대로면 prev는 그대로 둔다 (다음 '가 마지막 실제 값을 따르게).
+      if (cleaned[col] !== "'") prev[k] = cleaned[col];
+    }
+    var status = polishDeliveryStatus_(cleaned[3], cleaned[6]);
+    res.statusCounts[status] = (res.statusCounts[status] || 0) + 1;
+    res.expandedQuotes += expanded;
+    res.cellsChanged += cellsChanged;
+    items.push({
+      date: currentDate,
+      status: status,
+      row: cleaned,
+      changed: changed,
+      hOrig: values[r][7],
+      iOrig: values[r][8],
+      hBlank: String(values[r][7] == null ? '' : values[r][7]).trim() === '',
+      iBlank: String(values[r][8] == null ? '' : values[r][8]).trim() === ''
+    });
+  }
+  res.items = items.length;
+  if (items.length === 0) { res.error = 'no item rows found'; return res; }
+  // 3. 구분 행 삭제 (아래에서 위로 — 행 번호 밀림 방지).
+  for (var di = toDelete.length - 1; di >= 0; di--) {
+    sheet.deleteRow(toDelete[di]);
+  }
+  res.separatorsDeleted = toDelete.length;
+  var newLastRow = 1 + items.length;
+  // 4. 바뀐 A~G 행만 쓴다 — 연속된 행은 한 번의 setValues로 묶는다.
+  //    (삭제 뒤라 항목 i는 시트 행 2+i에 있다.)
+  var writeStart = -1;
+  for (var w = 0; w <= items.length; w++) {
+    var isChanged = w < items.length && items[w].changed;
+    if (isChanged && writeStart < 0) writeStart = w;
+    if (!isChanged && writeStart >= 0) {
+      var block = [];
+      for (var j = writeStart; j < w; j++) block.push(items[j].row);
+      sheet.getRange(2 + writeStart, 1, block.length, 7).setValues(block);
+      writeStart = -1;
+    }
+  }
+  // 5. H(날짜)·I(상태) — 빈 칸만 채운다 (이미 있는 값은 수동 입력으로 보고 보존).
+  var hi = [];
+  for (var h = 0; h < items.length; h++) {
+    var it = items[h];
+    var dateVal = it.hBlank ? (it.date || '') : it.hOrig;
+    var statusVal = it.iBlank ? it.status : it.iOrig;
+    if (it.hBlank && it.date) res.datesFilled++;
+    if (it.iBlank) res.statusFilled++;
+    hi.push([dateVal, statusVal]);
+  }
+  sheet.getRange(2, 8, items.length, 2).setValues(hi);
+  // 6. 헤더 H1='날짜', I1='상태' (비어 있을 때만).
+  if (String(values[0][7] || '').trim() === '') sheet.getRange(1, 8).setValue('날짜');
+  if (String(values[0][8] || '').trim() === '') sheet.getRange(1, 9).setValue('상태');
+  sheet.getRange(2, 8, items.length, 1).setNumberFormat('yyyy-mm-dd');
+  // 7. 필터 + 헤더 고정 + 상태 드롭다운 (엄격 모드 — I열은 이 함수와 사람만 쓴다).
+  sheet.setFrozenRows(1);
+  if (!sheet.getFilter()) {
+    sheet.getRange(1, 1, newLastRow, 9).createFilter();
+  }
+  var statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['정상', '취소', '중복', '발송 제외'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 9, items.length, 1).setDataValidation(statusRule);
+  // 8. 조건부 서식 (행 전체 A2:I<마지막행>).
+  var crange = sheet.getRange(2, 1, items.length, 9); // A2:I<마지막행>
+  polishUpsertConditionalRules_(sheet, [
+    { formula: '=$I2="취소"', background: '#e8eaed', range: crange },
+    { formula: '=$I2="중복"', background: '#fde8e0', range: crange },
+    { formula: '=$I2="발송 제외"', background: '#fce8e6', range: crange }
+  ]);
+  // 9. 새 탭 '요약' (없으면 생성, 있으면 내용 갱신). 첫 번째 위치로 이동.
+  var FR = POLISH_FORMULA_ROWS;
+  var D = DELIVERY_SHEET_NAME;
+  var sumName = '요약';
+  var sum = ss.getSheetByName(sumName);
+  if (!sum) {
+    sum = ss.insertSheet(sumName);
+  }
+  sum.clear();
+  // 날짜별 건수 (상위 10개) — 스캔 결과에서 집계 (재실행 시 H열 기존 날짜도 포함).
+  var dateCounts = {};
+  var dateObjs = {};
+  items.forEach(function (it) {
+    var eff = it.date;
+    if (!eff && it.hOrig instanceof Date) eff = it.hOrig;
+    if (!eff) return;
+    var key = Utilities.formatDate(eff, TIMEZONE, 'yyyy-MM-dd');
+    dateCounts[key] = (dateCounts[key] || 0) + 1;
+    if (!dateObjs[key]) dateObjs[key] = eff;
+  });
+  var dateKeys = Object.keys(dateCounts).sort(function (a, b) { return dateCounts[b] - dateCounts[a]; }).slice(0, 10);
+  var srows = [
+    ['항목', '값'],
+    ['전체 항목 수', '=COUNTA(' + D + '!A2:A' + FR + ')'],
+    ['정상', '=COUNTIF(' + D + '!I2:I' + FR + ',"정상")'],
+    ['취소', '=COUNTIF(' + D + '!I2:I' + FR + ',"취소")'],
+    ['중복', '=COUNTIF(' + D + '!I2:I' + FR + ',"중복")'],
+    ['발송 제외', '=COUNTIF(' + D + '!I2:I' + FR + ',"발송 제외")'],
+    ['', ''],
+    ['날짜별 건수 (상위 10개)', ''],
+    ['날짜', '건수']
+  ];
+  dateKeys.forEach(function (key, idx) {
+    var rowNum = 10 + idx;
+    srows.push([dateObjs[key], '=COUNTIFS(' + D + '!H2:H' + FR + ',A' + rowNum + ')']);
+  });
+  sum.getRange(1, 1, srows.length, 2).setValues(srows);
+  sum.getRange(1, 1, 1, 2).setFontWeight('bold');
+  sum.getRange(9, 1, 1, 2).setFontWeight('bold');
+  if (dateKeys.length > 0) sum.getRange(10, 1, dateKeys.length, 1).setNumberFormat('yyyy-mm-dd');
+  sum.setFrozenRows(1);
+  sum.setColumnWidth(1, 260);
+  sum.setColumnWidth(2, 160);
+  ss.setActiveSheet(sum);
+  ss.moveActiveSheet(1);
+  res.summary = true;
+  Logger.log('polishDeliverySheet_: ' + JSON.stringify(res));
+  return res;
 }
