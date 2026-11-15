@@ -4272,8 +4272,10 @@ function formatSheet() {
  *  요약 탭을 붙이고, 배송 명단의 날짜 구분 행을 날짜 열로 정규화한다.
  *  - 실행 전 두 시트 모두 백업 탭을 먼저 만든다 (최초 1회만).
  *  - 재실행 안전: 이미 있는 것은 감지해 건너뛰거나 보완만 한다.
- *  - 수량은 건드리지 않는다 ('1 / 1'·'5x2=2' 같은 메모성 표기가 섞여
- *    있어 숫자화가 위험).
+ *  - 날짜를 못 읽는 구분 행('날짜 미표기')도 삭제한다 — 그 아래 항목의
+ *    날짜는 빈칸으로 둔다 (사용자 결정 2026-11-15, "날짜 비워두고 진행해줘").
+ *    남기면 날짜·상태 열이 한 행씩 밀린다 (1차 실행에서 확인됨).
+ *  - 요약 '전체 항목 수'는 상태 열(I)을 센다 (A열은 구분 행 공백까지 세어 205가 됨).
  *  - B열(상품명) 드롭다운은 두지 않는다 (2026-11-15 검토 결정).
  *    백엔드가 B열에 "상품명 N박스" 요약(예: 노지감귤 가정용 10kg 1박스)을
  *    쓰기 때문에, 순수 상품명만 허용하는 엄격 모드면 새 주문 저장이
@@ -4470,7 +4472,7 @@ function polishDeliveryDate_(label) {
 function polishDeliverySheet_() {
   var ss = SpreadsheetApp.openById(DELIVERY_SHEET_ID);
   var res = {
-    backup: null, separatorsFound: 0, separatorsDeleted: 0, separatorsSkipped: [],
+    backup: null, separatorsFound: 0, separatorsDeleted: 0, separatorsNoDate: [],
     items: 0, datesFilled: 0, statusFilled: 0, statusCounts: {},
     expandedQuotes: 0, cellsChanged: 0, summary: false
   };
@@ -4496,12 +4498,16 @@ function polishDeliverySheet_() {
       var d = polishDeliveryDate_(row[2]);
       if (d) {
         currentDate = d;
-        toDelete.push(r + 1); // 시트 행 번호
       } else {
-        // 날짜를 못 읽으면 삭제하지 않고 남긴다 (데이터 보호).
-        res.separatorsSkipped.push(r + 1);
-        Logger.log('polish delivery: separator without a readable date, kept, row ' + (r + 1) + ', C=' + JSON.stringify(row[2]));
+        // 날짜를 못 읽어도 구분 행은 삭제한다 (사용자 결정 2026-11-15:
+        // "날짜 비워두고 진행해줘"). 그 아래 항목들의 날짜는 빈칸이 된다 —
+        // 앞 그룹 날짜를 물려받지 않는다. 지우지 않고 남기면 날짜·상태
+        // 열이 한 행씩 밀리는 정렬 버그가 생긴다 (2026-11-15 1차 실행에서 확인).
+        currentDate = null;
+        res.separatorsNoDate.push(r + 1);
+        Logger.log('polish delivery: separator without a readable date, deleted, items below get blank date, row ' + (r + 1) + ', C=' + JSON.stringify(row[2]));
       }
+      toDelete.push(r + 1); // 시트 행 번호
       continue;
     }
     // 항목 행: A~G trim + D·E·F ' 전개.
@@ -4623,7 +4629,7 @@ function polishDeliverySheet_() {
   var dateKeys = Object.keys(dateCounts).sort(function (a, b) { return dateCounts[b] - dateCounts[a]; }).slice(0, 10);
   var srows = [
     ['항목', '값'],
-    ['전체 항목 수', '=COUNTA(' + D + '!A2:A' + FR + ')'],
+    ['전체 항목 수', '=COUNTA(' + D + '!I2:I' + FR + ')'],
     ['정상', '=COUNTIF(' + D + '!I2:I' + FR + ',"정상")'],
     ['취소', '=COUNTIF(' + D + '!I2:I' + FR + ',"취소")'],
     ['중복', '=COUNTIF(' + D + '!I2:I' + FR + ',"중복")'],
