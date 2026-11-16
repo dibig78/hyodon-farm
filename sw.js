@@ -6,7 +6,7 @@
  * (주문·관리자 데이터가 낡으면 안 됩니다). POST 등 GET이 아닌 요청도 캐시하지 않습니다.
  */
 
-const CACHE_NAME = 'hyodon-farm-v1';
+const CACHE_NAME = 'hyodon-farm-v2';
 
 const PRECACHE_URLS = [
   './',
@@ -17,9 +17,9 @@ const PRECACHE_URLS = [
   'inquiry.html',
   'gallery.html',
   'manifest.webmanifest',
-  'icon-192.png',
-  'icon-512.png',
-  'apple-touch-icon.png',
+  'icon-192.png?v=2',
+  'icon-512.png?v=2',
+  'apple-touch-icon.png?v=2',
   'favicon.svg',
   'assets/hero.jpg',
   'assets/golden.jpg',
