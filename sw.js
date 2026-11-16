@@ -6,7 +6,7 @@
  * (주문·관리자 데이터가 낡으면 안 됩니다). POST 등 GET이 아닌 요청도 캐시하지 않습니다.
  */
 
-const CACHE_NAME = 'hyodon-farm-v3';
+const CACHE_NAME = 'hyodon-farm-v4';
 
 const PRECACHE_URLS = [
   './',
