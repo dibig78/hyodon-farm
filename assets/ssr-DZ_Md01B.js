@@ -1,0 +1,1 @@
+function e(e){try{let t=document.getElementById(`hyodon-ssr`);return!t||!t.textContent?void 0:JSON.parse(t.textContent)[e]}catch{return}}export{e as t};
