@@ -1,0 +1,1 @@
+import{Vt as e}from"./appearance-DemYQg4a.js";import{V as t}from"./focusOutline.stylex-D7WGn0e3.js";var n=t();function r({icon:t,...r}){return(0,n.jsx)(e,{...r,icon:t,isIconOnly:!0})}r.displayName=`IconButton`;export{r as t};
